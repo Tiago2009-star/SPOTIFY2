@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://www.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://i.ytimg.com" crossorigin>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%231ed760'/%3E%3Cpath d='M22 55c8-10 16-10 24 0s16 10 24 0' fill='none' stroke='%23000' stroke-width='8' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=11">
 </head>
 <body>
   <a class="skip-link" href="#main">Pular para o conteúdo</a>
@@ -78,7 +78,7 @@
   </div>
 
   <footer class="player" id="player" aria-label="Player de música">
-    <div class="np">
+    <div class="np" title="Abrir a música que está tocando">
       <div class="np-cover" id="np-cover" aria-hidden="true"><span>♪</span></div>
       <div class="np-text">
         <div class="np-title" id="np-title">Escolha uma música</div>
@@ -125,6 +125,21 @@
     </div>
   </footer>
 
+  <nav class="tabbar" id="tabbar" aria-label="Navegação do telemóvel">
+    <button type="button" class="tab-item active" id="tab-home" aria-label="Início">
+      <span class="ico" data-ico="home" aria-hidden="true"></span><span>Início</span>
+    </button>
+    <button type="button" class="tab-item" id="tab-search" aria-label="Buscar">
+      <span class="ico" data-ico="search" aria-hidden="true"></span><span>Buscar</span>
+    </button>
+    <button type="button" class="tab-item" id="tab-profile" aria-label="Perfil">
+      <span class="ico" data-ico="user" aria-hidden="true"></span><span>Perfil</span>
+    </button>
+    <button type="button" class="tab-item" id="tab-library" aria-label="Biblioteca">
+      <span class="ico" data-ico="library" aria-hidden="true"></span><span>Biblioteca</span>
+    </button>
+  </nav>
+
   <aside class="queue" id="queue" aria-label="Fila de reprodução"></aside>
   <div class="yt-engine" id="yt-stage" aria-hidden="true"></div>
   <input type="file" id="file-input" accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac" multiple hidden>
@@ -170,7 +185,7 @@
       function load(path, done, fail) {
         var script = document.createElement('script');
         /* versão na URL evita que o navegador rode uma cópia antiga do app */
-        script.src = path + '?v=5';
+        script.src = path + '?v=11';
         script.onload = done;
         script.onerror = function () {
           if (path.indexOf('js/') !== 0) { fail(); return; }

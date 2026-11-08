@@ -23,6 +23,8 @@
   }
 
   const LIKED_COLORS = ['#4f46e5', '#a855f7'];
+  const PROFILE_COLORS = ['#334155', '#1ed760'];
+  const HISTORY_COLORS = ['#1e3a8a', '#22d3ee'];
   const LOCAL_COLORS = ['#0f766e', '#22d3ee'];
   const YT_COLORS = ['#ff2d55', '#8b5cf6'];
   const SOURCE_LABELS = {
@@ -30,6 +32,7 @@
     album: 'Álbum',
     liked: 'Músicas Curtidas',
     local: 'Minhas músicas',
+    history: 'Histórico',
     taste: 'Baseado no seu gosto',
     catalog: 'Baseado no seu gosto'
   };
@@ -57,6 +60,9 @@
     shuffle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>',
     repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
     queue: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h12M4 12h12M4 17h7"/><path d="m15.5 14.5 5 2.5-5 2.5z" fill="currentColor" stroke="none"/></svg>',
+    library: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5v14M9 5v14"/><path d="M13.5 5.6 18 5l2.2 13.4-4.5.6z"/></svg>',
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8.5" r="3.7"/><path d="M4.6 20c1.2-3.5 4-5.3 7.4-5.3s6.2 1.8 7.4 5.3"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3.2 2"/></svg>',
     heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s-8-4.9-8-10.2A4.8 4.8 0 0 1 12 7a4.8 4.8 0 0 1 8 3.8C20 16.1 12 21 12 21z"/></svg>',
     heartFilled: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-8-4.9-8-10.2A4.8 4.8 0 0 1 12 7a4.8 4.8 0 0 1 8 3.8C20 16.1 12 21 12 21z"/></svg>',
     more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
@@ -79,6 +85,7 @@
     playlists: [],
     recent: [],
     ytTracks: [],
+    searches: [],
     prefs: { volume: 0.8, shuffle: false, repeat: 'off' }
   };
 
@@ -92,6 +99,9 @@
       }
       if (Array.isArray(saved.recent)) store.recent = saved.recent;
       if (Array.isArray(saved.ytTracks)) store.ytTracks = saved.ytTracks;
+      if (Array.isArray(saved.searches)) {
+        store.searches = saved.searches.filter(s => typeof s === 'string' && s.trim()).slice(0, 8);
+      }
       if (saved.prefs && typeof saved.prefs === 'object') {
         if (typeof saved.prefs.volume === 'number') store.prefs.volume = saved.prefs.volume;
         if (typeof saved.prefs.shuffle === 'boolean') store.prefs.shuffle = saved.prefs.shuffle;
@@ -252,6 +262,7 @@
   const fileInput = $('#file-input');
   const sidebarEl = $('#sidebar');
 
+  const npBlock = $('.np');
   const npCover = $('#np-cover');
   const npTitle = $('#np-title');
   const npArtist = $('#np-artist');
@@ -270,6 +281,10 @@
   const modalRoot = $('#modal-root');
   const queueEl = $('#queue');
   const queueBtn = $('#btn-queue');
+  const tabHome = $('#tab-home');
+  const tabSearch = $('#tab-search');
+  const tabProfile = $('#tab-profile');
+  const tabLibrary = $('#tab-library');
 
   /* ---------------------------- duração ---------------------------- */
   function paintDuration(id, seconds) {
@@ -507,9 +522,23 @@
   function searchHTML(q) {
     const term = norm(q);
     if (!term) {
+      const chips = store.searches.length
+        ? subSection('Buscas recentes',
+            '<div class="chips">' + store.searches.map(s =>
+              '<button type="button" class="chip" data-search-term="' + esc(s) + '">' + esc(s) + '</button>'
+            ).join('') + '</div>')
+        : '';
+
+      const recent = historyIds().slice(0, 10);
+      const recentBlock = recent.length
+        ? subSection('Tocadas recentemente', trackListHTML(recent))
+        : '';
+
       return '<div class="view-body search-body"><h1 class="page-title">Buscar</h1>' +
         '<p class="page-sub">Digite o nome de uma música, artista ou álbum — os resultados do catálogo e do YouTube aparecem sozinhos.</p>' +
-        trackListHTML(allIds()) + '</div>';
+        chips +
+        recentBlock +
+        subSection('Todo o catálogo', trackListHTML(allIds())) + '</div>';
     }
 
     const foundAlbums = albums.filter(a => norm(a.title + ' ' + a.artist).indexOf(term) !== -1);
@@ -595,17 +624,19 @@
         '<span class="yt-thumb">' +
           (item.thumb ? '<img src="' + esc(item.thumb) + '" alt="" loading="lazy">' : '') +
           '<span class="yt-badge">' + ICONS.youtubeBadge + '</span>' +
-          '<span class="yt-card-tools">' +
-            '<button type="button" class="icon-btn heart-btn' + (isLiked ? ' liked' : '') + '" data-yt-like="' +
-              esc(item.id) + '"' + data + ' aria-label="' +
-              (isLiked ? 'Remover dos favoritos' : 'Adicionar aos favoritos') + '" title="Favoritar">' +
-              (isLiked ? ICONS.heartFilled : ICONS.heart) + '</button>' +
-            '<button type="button" class="icon-btn" data-yt-save="' + esc(item.id) + '"' + data +
-              ' aria-label="Adicionar a uma playlist" title="Adicionar a uma playlist">' + ICONS.plus + '</button>' +
-          '</span>' +
         '</span>' +
-        '<span class="yt-card-title">' + esc(item.title) + '</span>' +
-        '<span class="yt-card-sub">' + esc(item.author) + '</span>' +
+        '<span class="yt-card-text">' +
+          '<span class="yt-card-title">' + esc(item.title) + '</span>' +
+          '<span class="yt-card-sub">' + esc(item.author) + '</span>' +
+        '</span>' +
+        '<span class="yt-card-tools">' +
+          '<button type="button" class="icon-btn heart-btn' + (isLiked ? ' liked' : '') + '" data-yt-like="' +
+            esc(item.id) + '"' + data + ' aria-label="' +
+            (isLiked ? 'Remover dos favoritos' : 'Adicionar aos favoritos') + '" title="Favoritar">' +
+            (isLiked ? ICONS.heartFilled : ICONS.heart) + '</button>' +
+          '<button type="button" class="icon-btn" data-yt-save="' + esc(item.id) + '"' + data +
+            ' aria-label="Adicionar a uma playlist" title="Adicionar a uma playlist">' + ICONS.plus + '</button>' +
+        '</span>' +
       '</div>';
     }).join('') + '</div>';
   }
@@ -883,7 +914,7 @@
     };
     paintYtPlayer();
     updatePlayerBar();
-    mainEl.scrollTop = 0;
+    /* não rola nem troca de tela: a busca e os resultados continuam onde estão */
     if (isFileProtocol()) toast('Vídeo não toca em file:// (erro 153). Rode iniciar.bat e abra localhost:8080.');
   }
 
@@ -1082,6 +1113,67 @@
     toast('Música removida');
   }
 
+  function historyHTML() {
+    const ids = historyIds();
+
+    return heroHTML({
+      colors: HISTORY_COLORS,
+      coverTitle: 'Histórico',
+      coverIcon: ICONS.clock,
+      type: 'Sua conta',
+      title: 'Histórico',
+      subtitle: ids.length + (ids.length === 1 ? ' música tocada' : ' músicas tocadas'),
+      actions:
+        '<button class="play-fab" data-act="play-history" aria-label="Tocar histórico">' + ICONS.play + '</button>' +
+        '<button class="btn" data-act="play-history">' + ICONS.play + '<span>Tocar histórico</span></button>' +
+        '<button class="btn danger" data-act="clear-history">' + ICONS.trash + '<span>Limpar</span></button>',
+      body: trackListHTML(ids, {
+        empty: 'Nada no histórico ainda. Toque uma música e ela aparece aqui.'
+      })
+    });
+  }
+
+  function clearHistory() {
+    if (!store.recent.length) {
+      toast('O histórico já está vazio');
+      return;
+    }
+    if (!window.confirm('Limpar o histórico de músicas?')) return;
+    store.recent = [];
+    save();
+    render();
+    toast('Histórico limpo');
+  }
+
+  function profileHTML() {
+    const stat = (value, label) => '<div class="stat"><strong>' + value + '</strong><span>' + esc(label) + '</span></div>';
+    const playlists = store.playlists.length;
+    const locals = localTracks.length;
+    const savedYt = ytTracks.length;
+
+    return heroHTML({
+      colors: PROFILE_COLORS,
+      coverTitle: 'Perfil',
+      coverIcon: ICONS.user,
+      type: 'Sua conta',
+      title: 'Perfil',
+      subtitle: 'Favoritos e playlists guardados neste navegador',
+      actions:
+        '<button class="btn" data-act="create-playlist">' + ICONS.plus + '<span>Nova playlist</span></button>' +
+        '<button class="btn" data-act="add-files">' + ICONS.upload + '<span>Adicionar músicas</span></button>',
+      body:
+        '<div class="stats">' +
+          stat(likedSet.size, likedSet.size === 1 ? 'música curtida' : 'músicas curtidas') +
+          stat(playlists, playlists === 1 ? 'playlist' : 'playlists') +
+          stat(locals, locals === 1 ? 'arquivo local' : 'arquivos locais') +
+          stat(savedYt, savedYt === 1 ? 'vídeo do YouTube' : 'vídeos do YouTube') +
+        '</div>' +
+        '<div class="note"><strong>Onde ficam seus dados:</strong> curtidas, playlists, arquivos importados e vídeos salvos ' +
+          'ficam no armazenamento deste navegador. Limpar os dados do site apaga tudo — use “Adicionar músicas” ' +
+          'para importar de novo.</div>'
+    });
+  }
+
   function localHTML() {
     const ids = localTracks.map(track => track.id);
     return heroHTML({
@@ -1109,14 +1201,25 @@
     if (route.name === 'playlist') return playlistHTML(route.id);
     if (route.name === 'liked') return likedHTML();
     if (route.name === 'local') return localHTML();
+    if (route.name === 'history') return historyHTML();
+    if (route.name === 'profile') return profileHTML();
     if (route.name === 'search') return searchHTML(route.q);
     return homeHTML();
   }
 
   /* --------------------------- renderização --------------------------- */
+  function renderTabbar() {
+    if (!tabHome) return;
+    tabHome.classList.toggle('active', route.name === 'home');
+    tabSearch.classList.toggle('active', route.name === 'search');
+    tabProfile.classList.toggle('active', route.name === 'profile');
+    tabLibrary.classList.toggle('active', sidebarEl.classList.contains('open'));
+  }
+
   function renderSidebar() {
     navHomeBtn.classList.toggle('active', route.name === 'home');
     navSearchBtn.classList.toggle('active', route.name === 'search');
+    renderTabbar();
 
     const likedCount = likedSet.size;
     const items = [
@@ -1129,6 +1232,11 @@
         coverHTML('Minhas músicas', LOCAL_COLORS, 'lib-cover') +
         '<span class="lib-text"><span class="lib-name">Minhas músicas</span>' +
         '<span class="lib-sub">' + localTracks.length + (localTracks.length === 1 ? ' arquivo' : ' arquivos') + '</span></span>' +
+      '</button>',
+      '<button class="lib-item' + (route.name === 'history' ? ' active' : '') + '" data-open-history>' +
+        coverHTML('Histórico', HISTORY_COLORS, 'lib-cover', ICONS.clock) +
+        '<span class="lib-text"><span class="lib-name">Histórico</span>' +
+        '<span class="lib-sub">' + historyIds().length + (historyIds().length === 1 ? ' música tocada' : ' músicas tocadas') + '</span></span>' +
       '</button>'
     ].concat(store.playlists.map(pl => (
       '<button class="lib-item' + (route.name === 'playlist' && route.id === pl.id ? ' active' : '') +
@@ -1240,6 +1348,45 @@
     muteBtn.innerHTML = '<span class="ico">' + (yt.muted ? ICONS.volumeOff : ICONS.volume) + '</span>';
   }
 
+  /* --------------- abrir a faixa que está a tocar --------------- */
+  function focusTrackRow(id) {
+    const row = viewEl.querySelector('.row[data-track-id="' + id + '"]');
+    if (!row) return;
+    row.classList.add('focus');
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setTimeout(() => row.classList.remove('focus'), 1800);
+  }
+
+  function openNowPlaying() {
+    /* vídeo do YouTube: abre o vídeo em si */
+    if (yt.playing) {
+      window.open('https://www.youtube.com/watch?v=' + encodeURIComponent(yt.playing.id), '_blank', 'noopener');
+      return;
+    }
+
+    const track = player.currentId ? trackById.get(player.currentId) : null;
+    if (!track) return;
+
+    if (track.yt) {
+      window.open('https://www.youtube.com/watch?v=' + encodeURIComponent(track.videoId), '_blank', 'noopener');
+      return;
+    }
+
+    if (track.local) {
+      navigate({ name: 'local' });
+      focusTrackRow(track.id);
+      return;
+    }
+
+    if (track.albumId && albumById.has(track.albumId)) {
+      navigate({ name: 'album', id: track.albumId });
+      focusTrackRow(track.id);
+      return;
+    }
+
+    navigate({ name: 'home' });
+  }
+
   /* ------------------------- fila de reprodução ------------------------- */
   function sourceLabel(kind, label) {
     if (label) return label;
@@ -1341,9 +1488,11 @@
     /* trocar de tela não mexe no áudio nem no vídeo: o player de YouTube vive
        em #yt-stage (fora da view) e a música do catálogo segue no objeto audio */
     const ytWasPlaying = !!(yt.playing && yt.state === 1);
+    const scrollTop = mainEl.scrollTop;
 
     renderSidebar();
     viewEl.innerHTML = viewHTML();
+    mainEl.scrollTop = scrollTop;
     if (yt.playing) paintYtPlayer();
     updatePlayerBar();
 
@@ -1397,7 +1546,18 @@
   }
 
   function pushRecent(id) {
-    store.recent = [id].concat(store.recent.filter(x => x !== id)).slice(0, 20);
+    store.recent = [id].concat(store.recent.filter(x => x !== id)).slice(0, 100);
+    save();
+  }
+
+  function historyIds() {
+    return store.recent.filter(id => trackById.has(id));
+  }
+
+  function pushSearch(term) {
+    const clean = String(term || '').trim().slice(0, 80);
+    if (!clean) return;
+    store.searches = [clean].concat(store.searches.filter(s => norm(s) !== norm(clean))).slice(0, 8);
     save();
   }
 
@@ -1785,6 +1945,18 @@
 
   /* ---------------------------- eventos ---------------------------- */
   function onViewClick(event) {
+    const termBtn = event.target.closest('[data-search-term]');
+    if (termBtn) {
+      const term = termBtn.dataset.searchTerm || '';
+      searchInput.value = term;
+      stopYouTubeSearch();
+      route = { name: 'search', q: term };
+      mainEl.scrollTop = 0;
+      render();
+      searchYouTube(term);
+      return;
+    }
+
     const ytLikeBtn = event.target.closest('[data-yt-like]');
     if (ytLikeBtn) {
       const track = ensureYtTrack(ytLikeBtn.dataset.ytLike, ytLikeBtn.dataset.ytTitle, ytLikeBtn.dataset.ytAuthor);
@@ -1806,6 +1978,8 @@
         togglePlay();
         return;
       }
+      /* a busca fica onde está: o vídeo entra no histórico e o termo em “Buscas recentes” */
+      if (route.name === 'search') pushSearch(route.q);
       playYouTube(ytCard.dataset.ytPlay, ytCard.dataset.ytTitle, ytCard.dataset.ytAuthor);
       return;
     }
@@ -1840,8 +2014,20 @@
         playAll(localTracks.map(t => t.id), 'local');
         return;
       }
+      if (action === 'play-history') {
+        playAll(historyIds(), 'history', 'Histórico');
+        return;
+      }
+      if (action === 'clear-history') {
+        clearHistory();
+        return;
+      }
       if (action === 'add-files') {
         openFilePicker();
+        return;
+      }
+      if (action === 'create-playlist') {
+        openCreatePlaylist([]);
         return;
       }
       return;
@@ -1864,7 +2050,12 @@
     if (event.target.closest('[data-open-liked]')) { navigate({ name: 'liked' }); return; }
 
     const row = event.target.closest('.row[data-play]');
-    if (row) { play(row.dataset.play, listIdsFrom(row), route.name); return; }
+    if (row) {
+      /* continuar na pesquisa: mesma tela, mesma rolagem, termo salvo */
+      if (route.name === 'search') pushSearch(route.q);
+      play(row.dataset.play, listIdsFrom(row), route.name);
+      return;
+    }
   }
 
   function wireEvents() {
@@ -1875,6 +2066,7 @@
       const q = searchInput.value.trim();
       if (!q) return;
       event.preventDefault();
+      pushSearch(q);
       stopYouTubeSearch();
       route = { name: 'search', q: q };
       render();
@@ -1904,7 +2096,10 @@
       event.stopPropagation();
       sidebarEl.classList.toggle('open');
     });
-    mainEl.addEventListener('click', () => sidebarEl.classList.remove('open'));
+    mainEl.addEventListener('click', () => {
+      sidebarEl.classList.remove('open');
+      renderTabbar();
+    });
 
     createPlaylistBtn.addEventListener('click', () => openCreatePlaylist([]));
     addFilesBtn.addEventListener('click', openFilePicker);
@@ -1935,6 +2130,11 @@
       if (event.target.closest('[data-open-local]')) {
         searchInput.value = '';
         navigate({ name: 'local' });
+        return;
+      }
+      if (event.target.closest('[data-open-history]')) {
+        searchInput.value = '';
+        navigate({ name: 'history' });
         return;
       }
       const pl = event.target.closest('[data-open-playlist]');
@@ -1995,6 +2195,55 @@
     npLike.addEventListener('click', () => {
       if (player.currentId) toggleLike(player.currentId);
     });
+
+    if (npBlock) {
+      npBlock.addEventListener('click', event => {
+        if (event.target.closest('#np-like')) return;
+        openNowPlaying();
+      });
+    }
+
+    /* navegação do telemóvel, na parte de baixo */
+    if (tabHome) {
+      tabHome.addEventListener('click', () => {
+        searchInput.value = '';
+        stopYouTubeSearch();
+        route = { name: 'home' };
+        stack.length = 0;
+        sidebarEl.classList.remove('open');
+        mainEl.scrollTop = 0;
+        render();
+      });
+    }
+
+    if (tabSearch) {
+      tabSearch.addEventListener('click', () => {
+        sidebarEl.classList.remove('open');
+        if (route.name !== 'search') {
+          route = { name: 'search', q: searchInput.value.trim() };
+          render();
+        }
+        searchInput.focus();
+      });
+    }
+
+    if (tabProfile) {
+      tabProfile.addEventListener('click', () => {
+        searchInput.value = '';
+        stack.length = 0;
+        sidebarEl.classList.remove('open');
+        route = { name: 'profile' };
+        mainEl.scrollTop = 0;
+        render();
+      });
+    }
+
+    if (tabLibrary) {
+      tabLibrary.addEventListener('click', () => {
+        sidebarEl.classList.toggle('open');
+        tabLibrary.classList.toggle('active', sidebarEl.classList.contains('open'));
+      });
+    }
 
     if (queueBtn) queueBtn.addEventListener('click', toggleQueue);
 
