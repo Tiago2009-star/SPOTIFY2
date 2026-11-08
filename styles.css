@@ -322,6 +322,8 @@ input { font: inherit; }
   text-shadow: 0 2px 10px rgba(0, 0, 0, .35);
   font-size: 34cqw;
 }
+.cover-img { background-size: cover; background-position: center; background-repeat: no-repeat; }
+.cover-img::after { display: none; }
 .cover-ico { position: relative; z-index: 1; display: grid; place-items: center; }
 .cover-ico .ico, .cover-ico svg { width: 44cqw; height: 44cqw; }
 
@@ -591,17 +593,17 @@ input { font: inherit; }
 }
 
 .yt-player { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
-.yt-frame {
-  position: relative;
-  width: 100%;
-  max-width: 760px;
-  aspect-ratio: 16 / 9;
-  border-radius: 12px;
+/* motor do player: fica fora da tela para tocar só o áudio, sem vídeo visível */
+.yt-engine {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 640px;
+  height: 360px;
   overflow: hidden;
-  background: #000;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, .5);
+  pointer-events: none;
 }
-.yt-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.yt-engine iframe { width: 100%; height: 100%; border: 0; display: block; }
 .yt-now {
   display: flex;
   align-items: center;
@@ -610,8 +612,23 @@ input { font: inherit; }
   flex-wrap: wrap;
   max-width: 760px;
 }
+.yt-now-info { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.yt-now-cover {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #232323;
+}
+.yt-now-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .yt-now-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.yt-now-text strong { font-size: 14px; }
+.yt-now-text strong {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .yt-now-text span { font-size: 12px; color: var(--muted); }
 .yt-now .btn { text-decoration: none; }
 
@@ -625,7 +642,27 @@ input { font: inherit; }
   background: transparent;
   color: inherit;
   text-align: left;
+  cursor: pointer;
 }
+.yt-card-tools {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+}
+.yt-card-tools .icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .62);
+  backdrop-filter: blur(6px);
+}
+.yt-card-tools .icon-btn .ico,
+.yt-card-tools .icon-btn svg { width: 16px; height: 16px; }
+.yt-card-tools .heart-btn { opacity: 1; }
+.yt-card-tools .heart-btn.liked { color: var(--green); }
 .yt-thumb {
   position: relative;
   display: block;
@@ -784,6 +821,84 @@ input { font: inherit; }
 .extras .vol { max-width: 110px; }
 .extras .icon-btn .ico { width: 17px; height: 17px; }
 
+/* ---------- fila de reprodução ---------- */
+.queue {
+  position: fixed;
+  right: 10px;
+  bottom: calc(var(--player-h) + 10px);
+  width: min(330px, calc(100vw - 20px));
+  max-height: min(62vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: #1b1b1b;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .6);
+  z-index: 60;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: opacity .18s, transform .18s;
+}
+.queue.open { opacity: 1; transform: none; pointer-events: auto; }
+.queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 10px 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+}
+.queue-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.queue-head-text strong { font-size: 13px; }
+.queue-head-text span {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-close { width: 28px; height: 28px; flex: 0 0 auto; }
+.queue-close .ico { width: 15px; height: 15px; }
+.queue-list {
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.queue-item:hover { background: rgba(255, 255, 255, .08); }
+.queue-item.current { background: rgba(30, 215, 96, .12); }
+.queue-index {
+  width: 16px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.queue-index .ico, .queue-index svg { width: 12px; height: 12px; fill: currentColor; }
+.queue-item.current .queue-index { color: var(--green); }
+.queue-cover { width: 34px; height: 34px; border-radius: 5px; overflow: hidden; flex: 0 0 auto; background: #232323; }
+.queue-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.queue-title { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-sub { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-item.current .queue-title { color: var(--green); }
+.queue .empty { margin: 12px; padding: 16px 12px; }
+
 /* ---------- menu ---------- */
 .menu {
   position: fixed;
@@ -802,19 +917,22 @@ input { font: inherit; }
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 9px 10px;
+  padding: 7px 9px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: #eee;
-  font-size: 13px;
+  font-size: 12.5px;
+  line-height: 1.3;
   text-align: left;
 }
 .menu-item:hover { background: rgba(255, 255, 255, .12); }
 .menu-item .ico { width: 16px; height: 16px; flex: 0 0 auto; }
-.menu-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ícones inline do menu: sem tamanho eles estouravam o menu */
+.menu-item > svg { width: 16px; height: 16px; flex: 0 0 auto; fill: currentColor; }
+.menu-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-sep { height: 1px; background: rgba(255, 255, 255, .12); margin: 6px 4px; }
 .menu-label {
   padding: 4px 10px 6px;
@@ -1055,6 +1173,7 @@ input { font: inherit; }
   .progress { display: none; }
   .extras { display: none; }
   .np-cover { width: 44px; height: 44px; }
+  .queue { left: 8px; right: 8px; width: auto; bottom: calc(var(--player-h) + 8px); max-height: 55vh; }
   .toast { bottom: calc(var(--player-h) + 12px); }
 }
 

@@ -115,6 +115,9 @@
     </div>
 
     <div class="extras">
+      <button type="button" class="icon-btn small" id="btn-queue" aria-label="Fila de reprodução" title="Fila de reprodução">
+        <span class="ico" data-ico="queue" aria-hidden="true"></span>
+      </button>
       <button type="button" class="icon-btn small" id="btn-mute" aria-label="Silenciar">
         <span class="ico" data-ico="volume" aria-hidden="true"></span>
       </button>
@@ -122,6 +125,8 @@
     </div>
   </footer>
 
+  <aside class="queue" id="queue" aria-label="Fila de reprodução"></aside>
+  <div class="yt-engine" id="yt-stage" aria-hidden="true"></div>
   <input type="file" id="file-input" accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac" multiple hidden>
   <div class="menu" id="menu" role="menu" aria-label="Opções da música"></div>
   <div class="modal-root" id="modal-root"></div>
@@ -165,7 +170,7 @@
       function load(path, done, fail) {
         var script = document.createElement('script');
         /* versão na URL evita que o navegador rode uma cópia antiga do app */
-        script.src = path + '?v=3';
+        script.src = path + '?v=5';
         script.onload = done;
         script.onerror = function () {
           if (path.indexOf('js/') !== 0) { fail(); return; }
