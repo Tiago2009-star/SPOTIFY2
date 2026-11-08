@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>Onda — sua música</title>
+  <meta name="description" content="Onda: player de música no navegador com catálogo, playlists, favoritos, arquivos do seu computador e busca no YouTube.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Onda — sua música">
+  <meta property="og:description" content="Player de música no navegador: playlists, favoritos, músicas do computador e busca no YouTube.">
+  <meta property="og:locale" content="pt_BR">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Onda — sua música">
+  <meta name="twitter:description" content="Player de música no navegador: playlists, favoritos, músicas do computador e busca no YouTube.">
+  <link rel="preconnect" href="https://www.soundhelix.com" crossorigin>
+  <link rel="preconnect" href="https://www.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://i.ytimg.com" crossorigin>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%231ed760'/%3E%3Cpath d='M22 55c8-10 16-10 24 0s16 10 24 0' fill='none' stroke='%23000' stroke-width='8' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Pular para o conteúdo</a>
+
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="Sua biblioteca">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M2 14c2.5-3 5-3 7.5 0s5 3 7.5 0 3-3 5-2"/><path d="M2 18.5c2.5-3 5-3 7.5 0s5 3 7.5 0 3-3 5-2"/></svg>
+        </span>
+        <span class="brand-name">Onda</span>
+      </div>
+
+      <nav class="nav" aria-label="Navegação principal">
+        <button type="button" class="nav-item active" id="nav-home">
+          <span class="ico" data-ico="home" aria-hidden="true"></span>
+          <span>Início</span>
+        </button>
+        <button type="button" class="nav-item" id="nav-search">
+          <span class="ico" data-ico="search" aria-hidden="true"></span>
+          <span>Buscar</span>
+        </button>
+      </nav>
+
+      <div class="lib">
+        <div class="lib-head">
+          <span class="lib-title">Sua biblioteca</span>
+          <div class="lib-head-actions">
+            <button type="button" class="icon-btn" id="btn-add-files" aria-label="Adicionar músicas do computador" title="Adicionar músicas do computador">
+              <span class="ico" data-ico="upload" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="icon-btn" id="btn-create-playlist" aria-label="Criar playlist" title="Criar playlist">
+              <span class="ico" data-ico="plus" aria-hidden="true"></span>
+            </button>
+          </div>
+        </div>
+        <div class="lib-list" id="lib-list"></div>
+      </div>
+    </aside>
+
+    <main class="main" id="main" tabindex="-1">
+      <header class="topbar">
+        <button type="button" class="icon-btn menu-toggle" id="btn-menu" aria-label="Abrir biblioteca" title="Abrir biblioteca">
+          <span class="ico" data-ico="menu" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="icon-btn back" id="btn-back" aria-label="Voltar" title="Voltar">
+          <span class="ico" data-ico="back" aria-hidden="true"></span>
+        </button>
+        <div class="searchbox">
+          <span class="ico" data-ico="search" aria-hidden="true"></span>
+          <input id="search-input" type="search" placeholder="Buscar músicas, artistas ou álbuns (com YouTube)" autocomplete="off" spellcheck="false" aria-label="Buscar músicas, artistas ou álbuns">
+        </div>
+      </header>
+      <div class="view" id="view"></div>
+    </main>
+  </div>
+
+  <footer class="player" id="player" aria-label="Player de música">
+    <div class="np">
+      <div class="np-cover" id="np-cover" aria-hidden="true"><span>♪</span></div>
+      <div class="np-text">
+        <div class="np-title" id="np-title">Escolha uma música</div>
+        <div class="np-artist" id="np-artist">Onda</div>
+      </div>
+      <button type="button" class="icon-btn heart" id="np-like" aria-label="Favoritar" disabled>
+        <span class="ico" data-ico="heart" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <div class="controls">
+      <div class="controls-btns">
+        <button type="button" class="icon-btn small" id="btn-shuffle" aria-label="Aleatório" title="Aleatório">
+          <span class="ico" data-ico="shuffle" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="icon-btn" id="btn-prev" aria-label="Anterior" title="Anterior">
+          <span class="ico" data-ico="prev" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="play-btn" id="btn-play" aria-label="Reproduzir">
+          <span class="ico" data-ico="play" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="icon-btn" id="btn-next" aria-label="Próxima" title="Próxima">
+          <span class="ico" data-ico="next" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="icon-btn small repeat" id="btn-repeat" aria-label="Repetir" title="Repetir: desligado">
+          <span class="ico" data-ico="repeat" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="progress">
+        <span class="time" id="t-current">0:00</span>
+        <input class="range" id="seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Progresso da música" disabled>
+        <span class="time" id="t-total">0:00</span>
+      </div>
+    </div>
+
+    <div class="extras">
+      <button type="button" class="icon-btn small" id="btn-mute" aria-label="Silenciar">
+        <span class="ico" data-ico="volume" aria-hidden="true"></span>
+      </button>
+      <input class="range vol" id="volume" type="range" min="0" max="100" step="1" value="80" aria-label="Volume">
+    </div>
+  </footer>
+
+  <input type="file" id="file-input" accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac" multiple hidden>
+  <div class="menu" id="menu" role="menu" aria-label="Opções da música"></div>
+  <div class="modal-root" id="modal-root"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <div class="noscript-note">O Onda precisa de JavaScript para tocar música. Ative o JavaScript no navegador e recarregue a página.</div>
+  </noscript>
+
+  <div class="load-error" id="load-error" hidden>
+    <strong>Os scripts do app não carregaram.</strong>
+    <p>Este endereço não encontrou <code>catalog.js</code> e <code>app.js</code>. Publique os dois arquivos
+      na mesma pasta do <code>index.html</code> (ou dentro de uma pasta <code>js/</code>) e recarregue a página.</p>
+  </div>
+
+  <script>
+    /* Carrega o app tanto de "js/app.js" quanto da raiz ("app.js"),
+       para funcionar em hospedagens que não aceitam subpastas. */
+    (function () {
+      var files = [
+        { path: 'config.js', optional: true },
+        { path: 'catalog.js', optional: false },
+        { path: 'app.js', optional: false }
+      ];
+      var index = 0;
+
+      function showError() {
+        var box = document.getElementById('load-error');
+        if (box) box.hidden = false;
+      }
+
+      function next() {
+        if (index >= files.length) return;
+        var file = files[index++];
+        load('js/' + file.path, function () { next(); }, function () {
+          if (file.optional) { next(); return; }
+          showError();
+        });
+      }
+
+      function load(path, done, fail) {
+        var script = document.createElement('script');
+        script.src = path;
+        script.onload = done;
+        script.onerror = function () {
+          if (path.indexOf('js/') !== 0) { fail(); return; }
+          load(path.slice(3), done, fail);
+        };
+        document.body.appendChild(script);
+      }
+
+      next();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# chave local da API (não versionar)
+js/config.js
+
+# sistema
+.DS_Store
+Thumbs.db
