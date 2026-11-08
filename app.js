@@ -2359,6 +2359,8 @@
     if (npBlock) {
       npBlock.addEventListener('click', event => {
         if (event.target.closest('#np-like')) return;
+        /* clicar na barra com o painel aberto fecha-o */
+        if (npPanelOpen()) { closeNowPlaying(); return; }
         openNowPlaying();
       });
     }
@@ -2380,6 +2382,13 @@
 
       if (npPanelSeek) npPanelSeek.addEventListener('input', () => seekTo(npPanelSeek.value));
     }
+
+    /* clicar fora do painel “a tocar” fecha-o */
+    document.addEventListener('click', event => {
+      if (!npPanelOpen()) return;
+      if (event.target.closest('#np-panel') || event.target.closest('.np')) return;
+      closeNowPlaying();
+    });
 
     /* histórico dentro da barra de pesquisa */
     if (searchDrop) {
@@ -2432,7 +2441,8 @@
 
     document.addEventListener('click', event => {
       if (!searchDrop || !searchDrop.classList.contains('open')) return;
-      if (event.target.closest('.searchbox') || event.target.closest('#search-drop')) return;
+      if (event.target.closest('.searchbox') || event.target.closest('#search-drop') ||
+        event.target.closest('#tab-search') || event.target.closest('#nav-search')) return;
       closeSearchDrop();
     });
 
