@@ -127,6 +127,13 @@ import {
 
   function friendly(err) {
     var code = (err && err.code) || '';
+    var raw = (err && err.message) || '';
+    /* a chave do Firebase foi apagada/expirada (o SDK devolve o texto do servidor) */
+    var keyProblem = code === 'auth/api-key-expired' || code === 'auth/api-key-not-valid' ||
+      code === 'auth/invalid-api-key' || /api[-\s]?key[^)]*(expired|not\s*valid|invalid)/i.test(raw);
+    if (keyProblem) {
+      return 'A chave do Firebase foi apagada ou expirou. Crie uma chave de API nova no Google Cloud (Credenciais) e atualize js/config.js.';
+    }
 
     if (code === 'auth/email-already-in-use') return 'Esse email já tem conta. Entre com a palavra-passe.';
     if (code === 'auth/invalid-email') return 'Email inválido.';

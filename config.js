@@ -7,7 +7,7 @@
  * (IndexedDB) e não tenta ligar à nuvem.
  */
 window.ONDA_CONFIG = {
-  youtubeApiKey: '',
+  youtubeApiKey: 'AIzaSyBCH_8hi_hMWfjKDASd_u3MOPLFkbzvzNo',
 
   firebaseConfig: {
     apiKey: 'AIzaSyDC1iNXWzn0HtxC-7NHHnhVklmlhc9B6RQ',

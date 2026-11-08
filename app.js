@@ -4,6 +4,44 @@
 (function () {
   'use strict';
 
+  /* ------------------- modo sem nuvem (emergência) ------------------- */
+  /* Se a chave do Firebase for apagada/expirar, o login na nuvem deixa de
+     funcionar e a app ficaria inutilizável. O botão "Continuar sem conta"
+     do ecrã de entrada liga este modo: contas locais, como antes. */
+  const NO_CLOUD_KEY = 'onda.noCloud';
+  function offlineMode() {
+    try { return localStorage.getItem(NO_CLOUD_KEY) === '1'; } catch (err) { return false; }
+  }
+
+  /* A chave do Firebase está utilizável? Pedido propositadamente inválido
+     (sem token) — não cria nem altera nada. 403 = bloqueada por restrições;
+     a mensagem "API key ..." = apagada/expirada. */
+  function cloudKeyUsable() {
+    const cfg = window.ONDA_CONFIG && window.ONDA_CONFIG.firebaseConfig;
+    const key = cfg && cfg.apiKey;
+    if (!key || typeof fetch !== 'function') return Promise.resolve(false);
+    return fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' +
+      encodeURIComponent(key), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    }).then(response => response.json().catch(() => ({})).then(body => {
+      const message = (body && body.error && body.error.message) || '';
+      if (/api[-\s]?key/i.test(message)) return false;
+      return response.status !== 403;
+    })).catch(() => false);
+  }
+
+  if (offlineMode()) {
+    window.OndaCloud = null;
+    /* quando a chave voltar a funcionar, regressa sozinho à conta na nuvem */
+    cloudKeyUsable().then(ok => {
+      if (!ok) return;
+      try { localStorage.removeItem(NO_CLOUD_KEY); } catch (err) {}
+      location.reload();
+    });
+  }
+
   /* --------------------------- catálogo --------------------------- */
   const catalog = window.CATALOG || { albums: [], tracks: [] };
   const albums = catalog.albums;
@@ -467,8 +505,22 @@
       '</button>' +
       (cloud
         ? '<p class="auth-accounts">Conta na nuvem (Firebase): a mesma conta abre a biblioteca em qualquer aparelho.</p>'
-        : (known ? '<p class="auth-accounts">Contas neste aparelho: ' + known + '</p>' : '')) +
+        : (offlineMode()
+            ? '<p class="auth-accounts">Modo sem nuvem: a conta fica só neste aparelho.</p>'
+            : (known ? '<p class="auth-accounts">Contas neste aparelho: ' + known + '</p>' : ''))) +
     '</div>';
+  }
+
+  const CLOUD_DOWN_MSG = 'Conta na nuvem indisponível (chave do Firebase inválida). ' +
+    'Entre ou crie uma conta neste aparelho — a música e a pesquisa continuam a funcionar.';
+
+  /* passa para conta local sem pedir nada ao utilizador */
+  function useLocalAuth() {
+    try { localStorage.setItem(NO_CLOUD_KEY, '1'); } catch (err) {}
+    window.OndaCloud = null;
+    showAuth(authMode);
+    const box = document.querySelector('#auth-error');
+    if (box) box.textContent = CLOUD_DOWN_MSG;
   }
 
   function showAuth(mode) {
@@ -532,6 +584,15 @@
         ? window.OndaCloud.friendly(err)
         : (err && err.message) || 'Não foi possível continuar.';
       if (errorEl) errorEl.textContent = message;
+
+      /* chave do Firebase apagada/expirada: passa para conta local, sem botões */
+      const code = (err && err.code) || '';
+      const raw = (err && err.message) || '';
+      const brokenKey = code === 'auth/api-key-expired' || code === 'auth/api-key-not-valid' ||
+        code === 'auth/invalid-api-key' || /api[-\s]?key[^)]*(expired|not\s*valid|invalid)/i.test(raw);
+      if (cloud && brokenKey) {
+        useLocalAuth();
+      }
     };
 
     /* na nuvem: Firebase Authentication + Firestore */
@@ -1120,7 +1181,14 @@
   }
 
   function ytPanelHTML(term) {
-    if (!ytKey) return '';
+    if (!ytKey) {
+      if (!term) return '';
+      return '<section class="yt-panel">' +
+        '<div class="yt-panel-head"><h2 class="section-title">YouTube</h2></div>' +
+        '<div class="empty">Para buscar vídeos do YouTube falta a chave da YouTube Data API. ' +
+        'Preencha <code>youtubeApiKey</code> em <code>js/config.js</code>.</div>' +
+      '</section>';
+    }
     if (!yt.query || norm(yt.query) !== norm(term)) return '';
 
     const fileNote = isFileProtocol()
@@ -3178,6 +3246,48 @@
       closeSearchDrop();
     });
 
+    /* Clicar fora de um painel aberto fecha-o e consome o clique: sem isto o
+       mesmo toque chegava à lista por baixo e trocava a música sem querer.
+       A fase de captura corre antes dos botões/linhas, por isso o clique morre aqui. */
+    document.addEventListener('click', event => {
+      const target = event.target;
+      if (!target || !target.closest) return;
+
+      const inside = sel => !!target.closest(sel);
+      const consume = () => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      };
+
+      if (menuEl.classList.contains('open') &&
+        !inside('#menu') && !inside('[data-act="more"]') &&
+        !inside('[data-yt-save]') && !inside('[data-np-add]')) {
+        closeMenu();
+        consume();
+        return;
+      }
+
+      if (queueEl && queueEl.classList.contains('open') &&
+        !inside('#queue') && !inside('#btn-queue') && !inside('#np-panel-queue')) {
+        closeQueue();
+        consume();
+        return;
+      }
+
+      if (npPanelOpen() && !inside('#np-panel') && !inside('.np')) {
+        closeNowPlaying();
+        consume();
+        return;
+      }
+
+      if (searchDrop && searchDrop.classList.contains('open') &&
+        !inside('.searchbox') && !inside('#search-drop') &&
+        !inside('#tab-search') && !inside('#nav-search')) {
+        closeSearchDrop();
+        consume();
+      }
+    }, true);
+
     /* botão de histórico dentro da barra de pesquisa */
     if (searchHistBtn) {
       searchHistBtn.addEventListener('click', event => {
@@ -3378,6 +3488,15 @@
 
     /* conta obrigatória: sem login o app fica atrás do portão */
     if (!isLoggedIn()) showAuth('login');
+
+    /* chave do Firebase inválida (apagada/expirada/restrita): entra em modo
+       local sozinho, para a música continuar a funcionar sem passos extra */
+    if (window.OndaCloud && !offlineMode()) {
+      cloudKeyUsable().then(ok => {
+        if (ok || isLoggedIn() || cloudUser) return;
+        useLocalAuth();
+      });
+    }
 
     /* sessão da nuvem (Firebase): retoma a conta e a biblioteca dela */
     if (window.OndaCloud) {

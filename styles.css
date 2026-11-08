@@ -113,7 +113,7 @@ body.locked { overflow: hidden; }
 *::before,
 *::after { box-sizing: border-box; }
 
-html, body { height: 100%; }
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 
 body {
   margin: 0;
@@ -206,6 +206,7 @@ input { font: inherit; }
 }
 .lib-list {
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -238,6 +239,7 @@ input { font: inherit; }
   background: var(--panel);
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   min-height: 0;
   scroll-behavior: smooth;
 }
@@ -1025,6 +1027,7 @@ input { font: inherit; }
 .queue-close .ico { width: 15px; height: 15px; }
 .queue-list {
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -1070,6 +1073,7 @@ input { font: inherit; }
   min-width: 258px;
   max-height: 60vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   border-radius: 10px;
   background: #282828;
@@ -1162,7 +1166,7 @@ input { font: inherit; }
 }
 .modal-search:focus { border-color: rgba(255, 255, 255, .45); }
 
-.modal-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 120px; }
+.modal-list { overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 2px; min-height: 120px; }
 
 .pick-row {
   display: flex;
@@ -1208,15 +1212,23 @@ input { font: inherit; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* ---------- scrollbars ---------- */
-.main::-webkit-scrollbar,
+/* a página rola, mas sem barra visível (roda do rato / gesto continuam a funcionar) */
+html,
+body,
+.main {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.main::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 .lib-list::-webkit-scrollbar,
 .modal-list::-webkit-scrollbar,
 .menu::-webkit-scrollbar { width: 10px; }
-.main::-webkit-scrollbar-thumb,
 .lib-list::-webkit-scrollbar-thumb,
 .modal-list::-webkit-scrollbar-thumb,
 .menu::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
-.main::-webkit-scrollbar-track { background: transparent; }
 
 /* ---------- acessibilidade ---------- */
 .skip-link {
@@ -1429,6 +1441,7 @@ input { font: inherit; }
   display: none;
   max-height: min(68vh, 440px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   border: 1px solid rgba(255, 255, 255, .09);
   border-radius: 12px;
@@ -1500,6 +1513,7 @@ input { font: inherit; }
   width: min(430px, calc(100vw - 28px));
   max-height: calc(100vh - var(--player-h) - var(--tabbar-h) - 28px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   align-items: center;
