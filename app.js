@@ -696,6 +696,7 @@
     }
 
     syncPlayIcon();
+    updatePlayerBar();
     updateProgress();
   }
 
@@ -1633,8 +1634,9 @@
     });
 
     playBtn.addEventListener('click', () => {
-      if (!player.currentId) playAll(allIds());
-      else togglePlay();
+      /* togglePlay já sabe tocar tudo quando nada foi escolhido e já sabe
+         pausar/retomar o vídeo do YouTube sem destruí-lo */
+      togglePlay();
     });
     prevBtn.addEventListener('click', prevTrack);
     nextBtn.addEventListener('click', () => nextTrack(false));

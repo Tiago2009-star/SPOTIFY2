@@ -164,7 +164,8 @@
 
       function load(path, done, fail) {
         var script = document.createElement('script');
-        script.src = path;
+        /* versão na URL evita que o navegador rode uma cópia antiga do app */
+        script.src = path + '?v=3';
         script.onload = done;
         script.onerror = function () {
           if (path.indexOf('js/') !== 0) { fail(); return; }
