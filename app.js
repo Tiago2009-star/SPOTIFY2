@@ -80,6 +80,9 @@
   const STORAGE_KEY = 'onda.player.v1';
   const audio = new Audio();
   audio.preload = 'metadata';
+  audio.setAttribute('playsinline', '');
+  audio.setAttribute('webkit-playsinline', '');
+  audio.setAttribute('aria-hidden', 'true');
 
   const store = {
     likes: [],
@@ -154,8 +157,7 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); } catch (err) {}
   };
 
-  /* vídeos do YouTube salvos em favoritos/playlists voltam na próxima visita */
-  store.ytTracks.forEach(record => registerYtTrack(record));
+  /* a biblioteca do Onda é o catálogo e os arquivos locais: nada de YouTube */
 
   /* --------------------------- utilitários --------------------------- */
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -478,9 +480,9 @@
       albumSection +
       localSection +
       savedSection +
-      '<div class="note"><strong>Músicas:</strong> o Onda toca direto do YouTube e dos arquivos do seu ' +
-        'computador. Pesquise na barra acima, toque num resultado para ouvir e use o coração ou o + ' +
-        'para guardar em favoritos e playlists. O histórico e as últimas buscas abrem na própria barra de pesquisa.</div>';
+      '<div class="note"><strong>Músicas:</strong> toque numa música para ouvir no player da app — a capa e os ' +
+        'controlos aparecem na barra de baixo e no painel “a tocar”, e o áudio continua com o ecrã desligado ou ' +
+        'a app em segundo plano. Adicione os arquivos do seu computador em “Minhas músicas”.</div>';
   }
 
   function albumHTML(id) {
@@ -545,7 +547,7 @@
     if (!term) {
       const saved = allIds();
       return '<div class="view-body search-body"><h1 class="page-title">Buscar</h1>' +
-        '<p class="page-sub">Escreva o nome de uma música, artista ou álbum — os resultados do YouTube aparecem sozinhos.</p>' +
+        '<p class="page-sub">Escreva o nome de uma música, artista ou álbum para filtrar a sua biblioteca.</p>' +
         (saved.length ? subSection('Músicas salvas', trackListHTML(saved)) : '') +
         '<div class="note"><strong>Histórico:</strong> fica na própria barra de pesquisa — clique nela para ver as ' +
           'músicas tocadas e as buscas recentes, e escreva para filtrar.</div>' +
@@ -587,9 +589,8 @@
     }
 
     return '<div class="view-body search-body"><h1 class="page-title">Resultados para “' + esc(q) + '”</h1>' +
-      '<div id="yt-player-slot"></div>' +
-      '<div id="yt-panel">' + ytPanelHTML(q) + '</div>' +
-      blocks.join('') + '</div>';
+      (blocks.length ? blocks.join('') : '<div class="empty">Nada encontrado na sua biblioteca.</div>') +
+      '</div>';
   }
 
   /* ---------------------------- youtube ---------------------------- */
@@ -621,7 +622,6 @@
             '<span class="yt-now-text"><strong>' + esc(yt.playing.title) + '</strong>' +
               '<span>' + esc(yt.playing.author || 'YouTube') + '</span></span>' +
           '</span>' +
-          '<a class="btn" href="https://www.youtube.com/watch?v=' + videoId + '" target="_blank" rel="noopener">Abrir no YouTube</a>' +
         '</div>' +
       '</div>';
   }
@@ -1268,6 +1268,7 @@
 
   function syncPlayIcon() {
     setPlayIcon(isPlayingNow());
+    updateMediaSessionState();
   }
 
   /* pinta o progresso na barra e no painel “a tocar” ao mesmo tempo */
@@ -1287,6 +1288,8 @@
       npPanelDur.textContent = dur ? fmt(dur) : '0:00';
       npPanelSeek.disabled = !dur;
     }
+
+    updateMediaSessionPosition(cur, dur);
   }
 
   function updateProgress() {
@@ -1361,6 +1364,131 @@
     muteBtn.innerHTML = '<span class="ico">' + (yt.muted ? ICONS.volumeOff : ICONS.volume) + '</span>';
 
     if (npPanelOpen()) renderNowPlaying();
+    updateMediaSession();
+  }
+
+  /* ------------------ reprodução em segundo plano ------------------ */
+  /* Com a Media Session o sistema mostra a música no aviso do telemóvel e no
+     ecrã de bloqueio, e mantém o áudio a tocar quando o ecrã desliga, o app vai
+     para segundo plano ou o utilizador passa para outra aplicação. */
+  const mediaSession = 'mediaSession' in navigator ? navigator.mediaSession : null;
+  const ONDA_ARTWORK = 'data:image/svg+xml,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
+    '<rect width="512" height="512" fill="#000"/>' +
+    '<circle cx="256" cy="256" r="150" fill="#1ed760"/>' +
+    '<path d="M168 276c28-36 56-36 84 0s56 36 84 0" fill="none" stroke="#000" stroke-width="26" stroke-linecap="round"/>' +
+    '</svg>'
+  );
+  let mediaPositionAt = 0;
+
+  function mediaArtwork(url) {
+    return url
+      ? [{ src: url, sizes: '320x180', type: 'image/jpeg' }]
+      : [{ src: ONDA_ARTWORK, sizes: '512x512', type: 'image/svg+xml' }];
+  }
+
+  function updateMediaSession() {
+    if (!mediaSession || typeof window.MediaMetadata !== 'function') return;
+
+    let info = null;
+    if (yt.playing) {
+      info = {
+        title: yt.playing.title,
+        artist: yt.playing.author || 'YouTube',
+        album: 'Onda',
+        artwork: mediaArtwork('https://i.ytimg.com/vi/' + encodeURIComponent(yt.playing.id) + '/mqdefault.jpg')
+      };
+    } else if (player.currentId && trackById.has(player.currentId)) {
+      const track = trackById.get(player.currentId);
+      info = {
+        title: track.title,
+        artist: track.artist,
+        album: track.album || 'Onda',
+        artwork: mediaArtwork(track.thumb || '')
+      };
+    }
+
+    try {
+      mediaSession.metadata = info ? new window.MediaMetadata(info) : null;
+    } catch (err) {}
+  }
+
+  function updateMediaSessionState() {
+    if (!mediaSession) return;
+    try { mediaSession.playbackState = isPlayingNow() ? 'playing' : 'paused'; } catch (err) {}
+  }
+
+  /* progresso no ecrã de bloqueio (no máximo uma vez por segundo) */
+  function updateMediaSessionPosition(cur, dur) {
+    if (!mediaSession || typeof mediaSession.setPositionState !== 'function') return;
+    if (!(dur > 0) || !Number.isFinite(cur)) return;
+    const now = Date.now();
+    if (now - mediaPositionAt < 1000) return;
+    mediaPositionAt = now;
+    try {
+      mediaSession.setPositionState({
+        duration: dur,
+        position: clamp(cur, 0, dur),
+        playbackRate: audio.playbackRate || 1
+      });
+    } catch (err) {}
+  }
+
+  function mediaSeekBy(delta) {
+    const step = Number(delta) || 10;
+    if (yt.playing) {
+      if (!yt.ready || !yt.player) return;
+      try {
+        const dur = Number(yt.player.getDuration()) || 0;
+        yt.player.seekTo(clamp((Number(yt.player.getCurrentTime()) || 0) + step, 0, dur), true);
+      } catch (err) {}
+      updateProgress();
+      return;
+    }
+    const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+    if (!dur) return;
+    audio.currentTime = clamp(audio.currentTime + step, 0, dur);
+    updateProgress();
+  }
+
+  function mediaSeekTo(seconds) {
+    if (yt.playing) {
+      if (!yt.ready || !yt.player) return;
+      try { yt.player.seekTo(Math.max(0, Number(seconds) || 0), true); } catch (err) {}
+      updateProgress();
+      return;
+    }
+    const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+    if (!dur) return;
+    audio.currentTime = clamp(Number(seconds) || 0, 0, dur);
+    updateProgress();
+  }
+
+  /* botões do aviso do sistema / ecrã de bloqueio */
+  function registerMediaSession() {
+    if (!mediaSession || typeof mediaSession.setActionHandler !== 'function') return;
+
+    const handlers = {
+      play: () => { if (!isPlayingNow()) togglePlay(); },
+      pause: () => { if (isPlayingNow()) togglePlay(); },
+      previoustrack: () => prevTrack(),
+      nexttrack: () => nextTrack(false),
+      seekbackward: details => mediaSeekBy(-((details && details.seekOffset) || 10)),
+      seekforward: details => mediaSeekBy((details && details.seekOffset) || 10),
+      seekto: details => {
+        if (details && typeof details.seekTime === 'number') mediaSeekTo(details.seekTime);
+      },
+      stop: () => {
+        audio.pause();
+        stopYouTubePlayback();
+        syncPlayIcon();
+        updateProgress();
+      }
+    };
+
+    Object.keys(handlers).forEach(action => {
+      try { mediaSession.setActionHandler(action, handlers[action]); } catch (err) {}
+    });
   }
 
   /* --------------- abrir a faixa que está a tocar --------------- */
@@ -1760,6 +1888,48 @@
     rafId = requestAnimationFrame(loop);
   }
 
+  /* Retoma o áudio do ponto onde parou. Depois de muito tempo pausado (ou com
+     o telemóvel bloqueado) o browser pode descartar o buffer e deixar o
+     elemento "morto": nesse caso recarregamos a faixa antes de dar play. */
+  function resumeAudio() {
+    const track = trackById.get(player.currentId);
+    if (!track || !track.src) return;
+
+    const broken = !!audio.error || audio.readyState === 0 || !audio.src;
+    if (broken) {
+      if (audio.src !== track.src) audio.src = track.src;
+      else audio.load();
+    }
+    if (audio.ended) {
+      try { audio.currentTime = 0; } catch (err) {}
+    }
+
+    const attempt = audio.play();
+    if (!attempt || typeof attempt.then !== 'function') return;
+
+    attempt.then(syncPlayIcon).catch(() => {
+      /* segunda tentativa: recarrega a mesma faixa e tenta do início */
+      const at = Number(audio.currentTime) || 0;
+      audio.src = track.src;
+      if (at > 0) {
+        audio.addEventListener('loadedmetadata', function once() {
+          audio.removeEventListener('loadedmetadata', once);
+          try { audio.currentTime = at; } catch (err) {}
+        });
+      }
+      const retry = audio.play();
+      if (retry && typeof retry.catch === 'function') {
+        retry.catch(() => {
+          setPlayIcon(false);
+          toast('Não foi possível tocar. Toque na música novamente.');
+        });
+        return;
+      }
+      setPlayIcon(false);
+      toast('Não foi possível tocar. Toque na música novamente.');
+    });
+  }
+
   function loadAndPlay(id) {
     const track = trackById.get(id);
     if (!track) return;
@@ -1777,13 +1947,7 @@
     audio.src = track.src;
     setPlayIcon(true);
 
-    const attempt = audio.play();
-    if (attempt && typeof attempt.catch === 'function') {
-      attempt.catch(() => {
-        setPlayIcon(false);
-        toast('Não foi possível tocar. Verifique sua conexão com a internet.');
-      });
-    }
+    resumeAudio();
 
     render();
     setPlayIcon(true);
@@ -1836,10 +2000,9 @@
       return;
     }
     if (audio.paused) {
-      const attempt = audio.play();
-      if (attempt && typeof attempt.catch === 'function') {
-        attempt.catch(() => toast('Não foi possível tocar. Verifique sua conexão com a internet.'));
-      }
+      resumeAudio();
+      syncPlayIcon();
+      startTick();
     } else {
       audio.pause();
     }
@@ -2143,7 +2306,6 @@
       route = { name: 'search', q: term };
       mainEl.scrollTop = 0;
       render();
-      searchYouTube(term);
       return;
     }
 
@@ -2261,7 +2423,6 @@
       stopYouTubeSearch();
       route = { name: 'search', q: q };
       render();
-      searchYouTube(q);
     });
 
     navHomeBtn.addEventListener('click', () => {
@@ -2305,11 +2466,6 @@
       mainEl.scrollTop = 0;
       stopYouTubeSearch();
       render();
-      if (!q) return;
-      ytTimer = setTimeout(() => {
-        ytTimer = 0;
-        searchYouTube(q);
-      }, 800);
     });
 
     sidebarEl.addEventListener('click', event => {
@@ -2404,7 +2560,6 @@
           stack.length = 0;
           mainEl.scrollTop = 0;
           render();
-          searchYouTube(term);
           searchInput.blur();
           return;
         }
@@ -2522,6 +2677,7 @@
         updatePlayerBar();
       }
       syncPlayIcon();
+      updateMediaSession();
       startTick();
     });
     audio.addEventListener('pause', syncPlayIcon);
@@ -2605,6 +2761,11 @@
       const key = el.getAttribute('data-ico');
       if (ICONS[key]) el.innerHTML = ICONS[key];
     });
+
+    /* o <audio> tem de estar dentro do documento para o telemóvel continuar a
+       tocar quando o ecrã desliga ou o app passa para segundo plano */
+    if (!audio.isConnected) document.body.appendChild(audio);
+    registerMediaSession();
 
     setVolume(clamp(typeof store.prefs.volume === 'number' ? store.prefs.volume : 0.8, 0, 1), false);
 

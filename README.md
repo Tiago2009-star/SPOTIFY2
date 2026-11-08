@@ -69,8 +69,7 @@ servindo de base para isso.
 index.html      estrutura da tela
 styles.css      tema escuro e layout
 js/catalog.js   catálogo (álbuns e faixas)
-js/config.js    chave da API do YouTube (ignorado pelo git)
-js/app.js       player, views, playlists, favoritos, YouTube, persistência
+js/app.js       player, views, playlists, favoritos, persistência
 ```
 
 ## Músicas do computador
@@ -84,29 +83,26 @@ Os arquivos ficam no **IndexedDB** do navegador (nada é enviado para servidor) 
 voltam ao abrir o app de novo. Se o navegador bloquear o armazenamento, as
 músicas tocam só naquela sessão — abrir por `http://localhost` costuma resolver.
 
-## YouTube (opcional)
+## YouTube
 
-A **busca** do app filtra o catálogo local enquanto você digita e consulta também
-a YouTube Data API v3 sozinha, ~0,8 s depois da última tecla. Ao mudar a busca, os
-resultados do YouTube desaparecem e são refeitos. O vídeo toca no player
-incorporado oficial, no topo dos resultados. Não há extração de áudio: o vídeo
-aparece no próprio player do YouTube (alguns vídeos bloqueiam incorporação).
+O app **não usa mais** o YouTube: a busca filtra só o catálogo e os arquivos
+locais, e nada abre o YouTube no navegador nem no telemóvel. O player
+incorporado também saiu — era ele que, no telemóvel, mostrava a interface do
+YouTube e mandava para o app deles.
 
-A chave fica em `js/config.js`, que está no `.gitignore`:
+Todas as faixas tocam no player do próprio app, pelo elemento `<audio>`, com a
+capa e os controlos dentro do Onda. Se quiser suas músicas, importe os arquivos
+em “Minhas músicas” ou coloque os `.mp3` em `musicas/` e aponte o `src` no
+`js/catalog.js`.
 
-```js
-window.ONDA_CONFIG = { youtubeApiKey: 'SUA_CHAVE' };
-```
+## Escrã desligado e segundo plano
 
-**O player só funciona com o app servido por http.** O YouTube exige um
-`Referer` válido para incorporar vídeo (erro 153) e isso não existe em
-`file://`. No Windows, dê dois cliques em **`iniciar.bat`** (Python ou Node) e
-use `http://localhost:8080`. Alternativas: `python -m http.server 8080` ou
-`npx serve .`. Se um vídeo específico mostrar erro 101/150, o dono desativou a
-incorporação — use “Abrir no YouTube”.
+Os **arquivos locais** (e qualquer faixa do catálogo) tocam pelo player do
+próprio app: continuam com o ecrã desligado, com o app em segundo plano e
+enquanto o utilizador passa para outra aplicação. A capa, o título e os
+controlos aparecem no aviso do sistema e no ecrã de bloqueio (Media Session), e
+só param quando o app/browser é fechado por completo.
 
-Requisitos: ativar **YouTube Data API v3** no Google Cloud e gerar uma chave.
-A cota gratuita é de 10.000 unidades/dia e cada busca consome 100 (~100 buscas).
-Se a chave tiver restrição por HTTP referrer, cadastre o domínio onde o app roda
-(com `file://` não há referrer, então a requisição pode ser recusada — nesse caso
-sirva a pasta por `http://localhost`).
+Se a música ficar **muito tempo pausada**, ao voltar basta tocar em play: o app
+recarrega o áudio do ponto onde parou e continua (o browser pode descartar o
+buffer enquanto o telemóvel está bloqueado).

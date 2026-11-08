@@ -7,19 +7,17 @@
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>Onda — sua música</title>
-  <meta name="description" content="Onda: player de música no navegador com catálogo, playlists, favoritos, arquivos do seu computador e busca no YouTube.">
+  <meta name="description" content="Onda: player de música no navegador com catálogo, playlists, favoritos e arquivos do seu computador.">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Onda — sua música">
-  <meta property="og:description" content="Player de música no navegador: playlists, favoritos, músicas do computador e busca no YouTube.">
+  <meta property="og:description" content="Player de música no navegador: playlists, favoritos e músicas do computador.">
   <meta property="og:locale" content="pt_BR">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Onda — sua música">
-  <meta name="twitter:description" content="Player de música no navegador: playlists, favoritos, músicas do computador e busca no YouTube.">
+  <meta name="twitter:description" content="Player de música no navegador: playlists, favoritos e músicas do computador.">
   <link rel="preconnect" href="https://www.soundhelix.com" crossorigin>
-  <link rel="preconnect" href="https://www.googleapis.com" crossorigin>
-  <link rel="preconnect" href="https://i.ytimg.com" crossorigin>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%231ed760'/%3E%3Cpath d='M22 55c8-10 16-10 24 0s16 10 24 0' fill='none' stroke='%23000' stroke-width='8' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=20">
+  <link rel="stylesheet" href="styles.css?v=23">
 </head>
 <body>
   <a class="skip-link" href="#main">Pular para o conteúdo</a>
@@ -69,8 +67,7 @@
           <span class="ico" data-ico="back" aria-hidden="true"></span>
         </button>
         <div class="searchbox">
-          <span class="ico" data-ico="search" aria-hidden="true"></span>
-          <input id="search-input" type="search" placeholder="Buscar músicas, artistas ou álbuns (com YouTube)" autocomplete="off" spellcheck="false" aria-label="Buscar músicas, artistas ou álbuns">
+          <span class="ico" data-ico="search" aria-hidden="true"></span>            <input id="search-input" type="search" placeholder="Buscar músicas, artistas ou álbuns" autocomplete="off" spellcheck="false" aria-label="Buscar músicas, artistas ou álbuns">
           <button type="button" class="search-hist" id="btn-search-history" aria-label="Histórico de músicas" title="Histórico de músicas">
             <span class="ico" data-ico="clock" aria-hidden="true"></span>
           </button>
@@ -200,7 +197,6 @@
   </section>
 
   <aside class="queue" id="queue" aria-label="Fila de reprodução"></aside>
-  <div class="yt-engine" id="yt-stage" aria-hidden="true"></div>
   <input type="file" id="file-input" accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac" multiple hidden>
   <div class="menu" id="menu" role="menu" aria-label="Opções da música"></div>
   <div class="modal-root" id="modal-root"></div>
@@ -244,7 +240,7 @@
       function load(path, done, fail) {
         var script = document.createElement('script');
         /* versão na URL evita que o navegador rode uma cópia antiga do app */
-        script.src = path + '?v=20';
+        script.src = path + '?v=23';
         script.onload = done;
         script.onerror = function () {
           if (path.indexOf('js/') !== 0) { fail(); return; }
