@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://www.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://i.ytimg.com" crossorigin>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%231ed760'/%3E%3Cpath d='M22 55c8-10 16-10 24 0s16 10 24 0' fill='none' stroke='%23000' stroke-width='8' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=11">
+  <link rel="stylesheet" href="styles.css?v=19">
 </head>
 <body>
   <a class="skip-link" href="#main">Pular para o conteúdo</a>
@@ -71,6 +71,10 @@
         <div class="searchbox">
           <span class="ico" data-ico="search" aria-hidden="true"></span>
           <input id="search-input" type="search" placeholder="Buscar músicas, artistas ou álbuns (com YouTube)" autocomplete="off" spellcheck="false" aria-label="Buscar músicas, artistas ou álbuns">
+          <button type="button" class="search-hist" id="btn-search-history" aria-label="Histórico de músicas" title="Histórico de músicas">
+            <span class="ico" data-ico="clock" aria-hidden="true"></span>
+          </button>
+          <div class="search-drop" id="search-drop" aria-label="Histórico e buscas recentes"></div>
         </div>
       </header>
       <div class="view" id="view"></div>
@@ -140,6 +144,61 @@
     </button>
   </nav>
 
+  <section class="np-panel" id="np-panel" aria-hidden="true" aria-label="A tocar agora">
+    <div class="np-panel-head">
+      <button type="button" class="icon-btn" data-np-close aria-label="Fechar" title="Fechar">
+        <span class="ico" data-ico="down" aria-hidden="true"></span>
+      </button>
+      <span class="np-panel-kicker" id="np-source">A tocar</span>
+      <span class="np-panel-head-space" aria-hidden="true"></span>
+    </div>
+
+    <div class="np-panel-art" id="np-art" aria-hidden="true"><span>♪</span></div>
+
+    <div class="np-panel-text">
+      <div class="np-panel-title" id="np-big-title">Escolha uma música</div>
+      <div class="np-panel-artist" id="np-big-artist">Onda</div>
+    </div>
+
+    <div class="np-panel-tools">
+      <button type="button" class="icon-btn" id="np-panel-like" aria-label="Favoritar" title="Favoritar" disabled>
+        <span class="ico" data-ico="heart" aria-hidden="true"></span>
+      </button>
+      <button type="button" class="icon-btn" id="np-panel-add" data-np-add="1" aria-label="Adicionar a uma playlist" title="Adicionar a uma playlist" disabled>
+        <span class="ico" data-ico="plus" aria-hidden="true"></span>
+      </button>
+      <button type="button" class="icon-btn" id="np-panel-queue" aria-label="Fila de reprodução" title="Fila de reprodução">
+        <span class="ico" data-ico="queue" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <div class="np-panel-progress">
+      <input class="range" id="np-panel-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Progresso da música" disabled>
+      <div class="np-panel-times">
+        <span id="np-panel-cur">0:00</span>
+        <span id="np-panel-dur">0:00</span>
+      </div>
+    </div>
+
+    <div class="np-panel-controls">
+      <button type="button" class="icon-btn" id="np-panel-shuffle" aria-label="Aleatório" title="Aleatório">
+        <span class="ico" data-ico="shuffle" aria-hidden="true"></span>
+      </button>
+      <button type="button" class="icon-btn" id="np-panel-prev" aria-label="Anterior" title="Anterior">
+        <span class="ico" data-ico="prev" aria-hidden="true"></span>
+      </button>
+      <button type="button" class="play-btn" id="np-panel-play" aria-label="Reproduzir">
+        <span class="ico" data-ico="play" aria-hidden="true"></span>
+      </button>
+      <button type="button" class="icon-btn" id="np-panel-next" aria-label="Próxima" title="Próxima">
+        <span class="ico" data-ico="next" aria-hidden="true"></span>
+      </button>
+      <button type="button" class="icon-btn repeat" id="np-panel-repeat" aria-label="Repetir" title="Repetir: desligado">
+        <span class="ico" data-ico="repeat" aria-hidden="true"></span>
+      </button>
+    </div>
+  </section>
+
   <aside class="queue" id="queue" aria-label="Fila de reprodução"></aside>
   <div class="yt-engine" id="yt-stage" aria-hidden="true"></div>
   <input type="file" id="file-input" accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac" multiple hidden>
@@ -185,7 +244,7 @@
       function load(path, done, fail) {
         var script = document.createElement('script');
         /* versão na URL evita que o navegador rode uma cópia antiga do app */
-        script.src = path + '?v=11';
+        script.src = path + '?v=19';
         script.onload = done;
         script.onerror = function () {
           if (path.indexOf('js/') !== 0) { fail(); return; }

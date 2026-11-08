@@ -53,6 +53,7 @@
     youtube: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5.5" width="19" height="13" rx="3.5"/><path d="M10.5 9.4v5.2l4.6-2.6z" fill="currentColor" stroke="none"/></svg>',
     youtubeBadge: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="5.5" width="21" height="13" rx="4" fill="#ff0000"/><path d="M10 9.2v5.6l5.2-2.8z" fill="#fff"/></svg>',
     back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
+    down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
     play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
     pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
     prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg>',
@@ -266,7 +267,25 @@
   const npCover = $('#np-cover');
   const npTitle = $('#np-title');
   const npArtist = $('#np-artist');
+  const searchDrop = $('#search-drop');
+  const searchHistBtn = $('#btn-search-history');
   const npLike = $('#np-like');
+  const npPanel = $('#np-panel');
+  const npArt = $('#np-art');
+  const npSource = $('#np-source');
+  const npBigTitle = $('#np-big-title');
+  const npBigArtist = $('#np-big-artist');
+  const npPanelLike = $('#np-panel-like');
+  const npPanelAdd = $('#np-panel-add');
+  const npPanelQueue = $('#np-panel-queue');
+  const npPanelPlay = $('#np-panel-play');
+  const npPanelPrev = $('#np-panel-prev');
+  const npPanelNext = $('#np-panel-next');
+  const npPanelShuffle = $('#np-panel-shuffle');
+  const npPanelRepeat = $('#np-panel-repeat');
+  const npPanelSeek = $('#np-panel-seek');
+  const npPanelCur = $('#np-panel-cur');
+  const npPanelDur = $('#np-panel-dur');
   const playBtn = $('#btn-play');
   const prevBtn = $('#btn-prev');
   const nextBtn = $('#btn-next');
@@ -446,20 +465,22 @@
       '</div>'
     )).join('');
 
-    const recentIds = store.recent.filter(id => trackById.has(id)).slice(0, 6);
-    const listTitle = recentIds.length ? 'Tocadas recentemente' : 'Sugestões para você';
-    const listIds = recentIds.length ? recentIds : allIds().slice(0, 6);
     const localSection = localTracks.length
       ? sectionHTML('Suas músicas do computador', trackListHTML(localTracks.map(t => t.id)))
       : '';
+    const albumSection = albums.length
+      ? sectionHTML('Feito para você', '<div class="cards">' + cards + '</div>')
+      : '';
+    const saved = allIds();
+    const savedSection = saved.length ? sectionHTML('Músicas salvas', trackListHTML(saved)) : '';
 
     return '<div class="home-top"><h1>' + greeting + '</h1><div class="tiles">' + tiles + '</div></div>' +
-      sectionHTML('Feito para você', '<div class="cards">' + cards + '</div>') +
+      albumSection +
       localSection +
-      sectionHTML(listTitle, trackListHTML(listIds)) +
-      '<div class="note"><strong>Músicas:</strong> o catálogo usa faixas de demonstração royalty-free do ' +
-        'SoundHelix. Use o botão de importar em “Sua biblioteca” para tocar arquivos do seu computador ' +
-        '(mp3, m4a, ogg, wav, flac) — eles entram em playlists e favoritos.</div>';
+      savedSection +
+      '<div class="note"><strong>Músicas:</strong> o Onda toca direto do YouTube e dos arquivos do seu ' +
+        'computador. Pesquise na barra acima, toque num resultado para ouvir e use o coração ou o + ' +
+        'para guardar em favoritos e playlists. O histórico e as últimas buscas abrem na própria barra de pesquisa.</div>';
   }
 
   function albumHTML(id) {
@@ -522,23 +543,13 @@
   function searchHTML(q) {
     const term = norm(q);
     if (!term) {
-      const chips = store.searches.length
-        ? subSection('Buscas recentes',
-            '<div class="chips">' + store.searches.map(s =>
-              '<button type="button" class="chip" data-search-term="' + esc(s) + '">' + esc(s) + '</button>'
-            ).join('') + '</div>')
-        : '';
-
-      const recent = historyIds().slice(0, 10);
-      const recentBlock = recent.length
-        ? subSection('Tocadas recentemente', trackListHTML(recent))
-        : '';
-
+      const saved = allIds();
       return '<div class="view-body search-body"><h1 class="page-title">Buscar</h1>' +
-        '<p class="page-sub">Digite o nome de uma música, artista ou álbum — os resultados do catálogo e do YouTube aparecem sozinhos.</p>' +
-        chips +
-        recentBlock +
-        subSection('Todo o catálogo', trackListHTML(allIds())) + '</div>';
+        '<p class="page-sub">Escreva o nome de uma música, artista ou álbum — os resultados do YouTube aparecem sozinhos.</p>' +
+        (saved.length ? subSection('Músicas salvas', trackListHTML(saved)) : '') +
+        '<div class="note"><strong>Histórico:</strong> fica na própria barra de pesquisa — clique nela para ver as ' +
+          'músicas tocadas e as buscas recentes, e escreva para filtrar.</div>' +
+        '</div>';
     }
 
     const foundAlbums = albums.filter(a => norm(a.title + ' ' + a.artist).indexOf(term) !== -1);
@@ -1163,7 +1174,7 @@
         '<button class="btn" data-act="add-files">' + ICONS.upload + '<span>Adicionar músicas</span></button>',
       body:
         '<div class="stats">' +
-          stat(likedSet.size, likedSet.size === 1 ? 'música curtida' : 'músicas curtidas') +
+          stat(likedTrackIds().length, likedTrackIds().length === 1 ? 'música curtida' : 'músicas curtidas') +
           stat(playlists, playlists === 1 ? 'playlist' : 'playlists') +
           stat(locals, locals === 1 ? 'arquivo local' : 'arquivos locais') +
           stat(savedYt, savedYt === 1 ? 'vídeo do YouTube' : 'vídeos do YouTube') +
@@ -1221,7 +1232,7 @@
     navSearchBtn.classList.toggle('active', route.name === 'search');
     renderTabbar();
 
-    const likedCount = likedSet.size;
+    const likedCount = likedTrackIds().length;
     const items = [
       '<button class="lib-item' + (route.name === 'liked' ? ' active' : '') + '" data-open-liked>' +
         coverHTML('Músicas Curtidas', LIKED_COLORS, 'lib-cover', ICONS.heartFilled) +
@@ -1233,11 +1244,6 @@
         '<span class="lib-text"><span class="lib-name">Minhas músicas</span>' +
         '<span class="lib-sub">' + localTracks.length + (localTracks.length === 1 ? ' arquivo' : ' arquivos') + '</span></span>' +
       '</button>',
-      '<button class="lib-item' + (route.name === 'history' ? ' active' : '') + '" data-open-history>' +
-        coverHTML('Histórico', HISTORY_COLORS, 'lib-cover', ICONS.clock) +
-        '<span class="lib-text"><span class="lib-name">Histórico</span>' +
-        '<span class="lib-sub">' + historyIds().length + (historyIds().length === 1 ? ' música tocada' : ' músicas tocadas') + '</span></span>' +
-      '</button>'
     ].concat(store.playlists.map(pl => (
       '<button class="lib-item' + (route.name === 'playlist' && route.id === pl.id ? ' active' : '') +
         '" data-open-playlist="' + pl.id + '">' +
@@ -1264,17 +1270,30 @@
     setPlayIcon(isPlayingNow());
   }
 
+  /* pinta o progresso na barra e no painel “a tocar” ao mesmo tempo */
+  function paintProgress(cur, dur) {
+    const pct = dur ? (cur / dur) * 1000 : 0;
+
+    seekEl.value = String(pct);
+    setRangeFill(seekEl, pct / 10);
+    tCurrent.textContent = fmt(cur);
+    tTotal.textContent = dur ? fmt(dur) : '0:00';
+    seekEl.disabled = !dur;
+
+    if (npPanelSeek) {
+      npPanelSeek.value = String(pct);
+      setRangeFill(npPanelSeek, pct / 10);
+      npPanelCur.textContent = fmt(cur);
+      npPanelDur.textContent = dur ? fmt(dur) : '0:00';
+      npPanelSeek.disabled = !dur;
+    }
+  }
+
   function updateProgress() {
     if (yt.playing) {
       const dur = yt.ready && yt.player ? Number(yt.player.getDuration()) || 0 : 0;
       const cur = yt.ready && yt.player ? Number(yt.player.getCurrentTime()) || 0 : 0;
-      const pct = dur ? (cur / dur) * 1000 : 0;
-
-      seekEl.value = String(pct);
-      setRangeFill(seekEl, pct / 10);
-      tCurrent.textContent = fmt(cur);
-      tTotal.textContent = dur ? fmt(dur) : '0:00';
-      seekEl.disabled = !dur;
+      paintProgress(cur, dur);
 
       if (yt.playing.trackId && dur && metaCache.get(yt.playing.trackId) !== dur) {
         metaCache.set(yt.playing.trackId, dur);
@@ -1285,13 +1304,7 @@
 
     const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
     const cur = audio.currentTime || 0;
-    const pct = dur ? (cur / dur) * 1000 : 0;
-
-    seekEl.value = String(pct);
-    setRangeFill(seekEl, pct / 10);
-    tCurrent.textContent = fmt(cur);
-    tTotal.textContent = dur ? fmt(dur) : '0:00';
-    seekEl.disabled = !dur;
+    paintProgress(cur, dur);
 
     if (dur && player.currentId && metaCache.get(player.currentId) !== dur) {
       metaCache.set(player.currentId, dur);
@@ -1339,13 +1352,15 @@
     shuffleBtn.classList.toggle('active', player.shuffle);
     repeatBtn.classList.toggle('active', player.repeat !== 'off');
     repeatBtn.classList.toggle('one', player.repeat === 'one');
-    repeatBtn.title = 'Repetir: ' + (player.repeat === 'off' ? 'desligado' : player.repeat === 'all' ? 'playlist' : 'uma música');
+    repeatBtn.title = repeatLabel();
 
     syncPlayIcon();
     updateProgress();
     volumeEl.value = String(Math.round(yt.volume * 100));
     setRangeFill(volumeEl, yt.volume * 100);
     muteBtn.innerHTML = '<span class="ico">' + (yt.muted ? ICONS.volumeOff : ICONS.volume) + '</span>';
+
+    if (npPanelOpen()) renderNowPlaying();
   }
 
   /* --------------- abrir a faixa que está a tocar --------------- */
@@ -1357,34 +1372,146 @@
     setTimeout(() => row.classList.remove('focus'), 1800);
   }
 
-  function openNowPlaying() {
-    /* vídeo do YouTube: abre o vídeo em si */
+  /* ------------------- painel “a tocar” (estilo Spotify) ------------------- */
+  function npPanelOpen() {
+    return !!(npPanel && npPanel.classList.contains('open'));
+  }
+
+  /* faixa que o painel controla: o vídeo salvo ou a música do catálogo */
+  function npActiveId() {
+    if (yt.playing && yt.playing.trackId && trackById.has(yt.playing.trackId)) return yt.playing.trackId;
+    if (player.currentId && trackById.has(player.currentId)) return player.currentId;
+    return null;
+  }
+
+  function repeatLabel() {
+    return 'Repetir: ' + (player.repeat === 'off' ? 'desligado' : player.repeat === 'all' ? 'playlist' : 'uma música');
+  }
+
+  function closeNowPlaying() {
+    if (!npPanelOpen()) return;
+    npPanel.classList.remove('open');
+    npPanel.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('np-open');
+  }
+
+  function renderNowPlaying() {
+    if (!npPanel) return;
+
+    const id = npActiveId();
+    const track = id ? trackById.get(id) : null;
+    const liked = !!(id && likedSet.has(id));
+    const alive = !!(track || yt.playing);
+
     if (yt.playing) {
-      window.open('https://www.youtube.com/watch?v=' + encodeURIComponent(yt.playing.id), '_blank', 'noopener');
+      npArt.style.backgroundImage = 'url("' + ytThumb(yt.playing.id) + '")';
+      npArt.innerHTML = '';
+      npBigTitle.textContent = yt.playing.title;
+      npBigArtist.textContent = yt.playing.author || 'YouTube';
+    } else if (track) {
+      if (track.thumb) {
+        npArt.style.backgroundImage = 'url("' + track.thumb + '")';
+        npArt.innerHTML = '';
+      } else {
+        npArt.style.backgroundImage = 'linear-gradient(135deg,' + track.colors[0] + ',' + track.colors[1] + ')';
+        npArt.innerHTML = '<span>' + esc(initials(track.album)) + '</span>';
+      }
+      npBigTitle.textContent = track.title;
+      npBigArtist.textContent = track.album && track.album !== 'YouTube'
+        ? track.artist + ' · ' + track.album
+        : track.artist;
+    } else {
+      npArt.style.backgroundImage = '';
+      npArt.innerHTML = '<span>♪</span>';
+      npBigTitle.textContent = 'Escolha uma música';
+      npBigArtist.textContent = 'Onda';
+    }
+
+    npSource.textContent = yt.playing
+      ? 'YouTube'
+      : (player.currentId ? sourceLabel(player.source.kind, player.source.label) : 'Onda');
+
+    npPanelLike.disabled = !alive;
+    npPanelLike.classList.toggle('active', liked);
+    npPanelLike.innerHTML = '<span class="ico">' + (liked ? ICONS.heartFilled : ICONS.heart) + '</span>';
+    npPanelLike.setAttribute('aria-label', liked ? 'Remover dos favoritos' : 'Adicionar aos favoritos');
+    npPanelLike.title = liked ? 'Remover dos favoritos' : 'Adicionar aos favoritos';
+    npPanelAdd.disabled = !alive;
+
+    const playing = isPlayingNow();
+    npPanelPlay.innerHTML = '<span class="ico">' + (playing ? ICONS.pause : ICONS.play) + '</span>';
+    npPanelPlay.setAttribute('aria-label', playing ? 'Pausar' : 'Reproduzir');
+
+    npPanelShuffle.classList.toggle('active', player.shuffle);
+    npPanelRepeat.classList.toggle('active', player.repeat !== 'off');
+    npPanelRepeat.classList.toggle('one', player.repeat === 'one');
+    npPanelRepeat.title = repeatLabel();
+
+    const many = player.queue.length > 1;
+    npPanelPrev.disabled = !many;
+    npPanelNext.disabled = !many;
+  }
+
+  function openNowPlaying() {
+    if (!npPanel) return;
+    if (!player.currentId && !yt.playing) {
+      toast('Escolha uma música primeiro');
+      return;
+    }
+    renderNowPlaying();
+    npPanel.classList.add('open');
+    npPanel.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('np-open');
+  }
+
+  /* curtir e guardar em playlist direto do painel */
+  function likeNowPlaying() {
+    const id = npActiveId();
+    if (id) { toggleLike(id); return; }
+    if (!yt.playing) return;
+    const track = ensureYtTrack(yt.playing.id, yt.playing.title, yt.playing.author);
+    if (track) toggleLike(track.id);
+  }
+
+  function addNowPlaying(anchor) {
+    const id = npActiveId();
+    if (id) { openTrackMenu(id, anchor); return; }
+    if (!yt.playing) return;
+    const track = ensureYtTrack(yt.playing.id, yt.playing.title, yt.playing.author);
+    if (track) openTrackMenu(track.id, anchor);
+  }
+
+  /* aleatório, repetir e avançar valem para a barra e para o painel */
+  function toggleShuffle() {
+    player.shuffle = !player.shuffle;
+    persistPrefs();
+    updatePlayerBar();
+    toast(player.shuffle ? 'Aleatório ativado' : 'Aleatório desativado');
+  }
+
+  function cycleRepeat() {
+    player.repeat = player.repeat === 'off' ? 'all' : player.repeat === 'all' ? 'one' : 'off';
+    persistPrefs();
+    updatePlayerBar();
+    toast(repeatLabel());
+  }
+
+  function seekTo(value) {
+    const pct = clamp(Number(value) || 0, 0, 1000) / 1000;
+
+    if (yt.playing) {
+      if (!yt.ready || !yt.player) return;
+      const dur = Number(yt.player.getDuration()) || 0;
+      if (!dur) return;
+      try { yt.player.seekTo(pct * dur, true); } catch (err) {}
+      updateProgress();
       return;
     }
 
-    const track = player.currentId ? trackById.get(player.currentId) : null;
-    if (!track) return;
-
-    if (track.yt) {
-      window.open('https://www.youtube.com/watch?v=' + encodeURIComponent(track.videoId), '_blank', 'noopener');
-      return;
-    }
-
-    if (track.local) {
-      navigate({ name: 'local' });
-      focusTrackRow(track.id);
-      return;
-    }
-
-    if (track.albumId && albumById.has(track.albumId)) {
-      navigate({ name: 'album', id: track.albumId });
-      focusTrackRow(track.id);
-      return;
-    }
-
-    navigate({ name: 'home' });
+    const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+    if (!dur) return;
+    audio.currentTime = pct * dur;
+    updateProgress();
   }
 
   /* ------------------------- fila de reprodução ------------------------- */
@@ -1559,6 +1686,69 @@
     if (!clean) return;
     store.searches = [clean].concat(store.searches.filter(s => norm(s) !== norm(clean))).slice(0, 8);
     save();
+  }
+
+  /* ------ histórico dentro da barra de pesquisa (vazio ou filtrando) ------ */
+  function searchDropHTML(rawTerm) {
+    const term = norm(rawTerm || '');
+
+    const searches = store.searches
+      .filter(termText => !term || norm(termText).indexOf(term) !== -1)
+      .slice(0, 6);
+    const chips = searches.length
+      ? '<div class="drop-label">' + (term ? 'Buscas parecidas' : 'Buscas recentes') + '</div><div class="drop-chips">' +
+        searches.map(termText =>
+          '<button type="button" class="chip" data-search-term="' + esc(termText) + '">' + esc(termText) + '</button>'
+        ).join('') + '</div>'
+      : '';
+
+    const seen = new Set();
+    const source = term ? historyIds().concat(allIds()) : historyIds();
+    const list = source.filter(id => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      const track = trackById.get(id);
+      if (!track) return false;
+      if (!term) return true;
+      return norm(track.title + ' ' + track.artist + ' ' + track.album).indexOf(term) !== -1;
+    }).slice(0, term ? 8 : 20).map(id => trackById.get(id));
+
+    const rows = list.length
+      ? '<div class="drop-label">' + (term ? 'No histórico e nas músicas' : 'Tocadas recentemente') + '</div>' +
+        '<div class="drop-rows">' +
+        list.map(track => (
+          '<button type="button" class="drop-row" data-drop-play="' + track.id + '">' +
+            coverFor(track, 'drop-cover') +
+            '<span class="drop-text"><span class="drop-title">' + esc(track.title) + '</span>' +
+            '<span class="drop-sub">' + esc(track.artist) + '</span></span>' +
+          '</button>'
+        )).join('') + '</div>'
+      : '';
+
+    if (!chips && !rows) return '';
+
+    const actions = !term && list.length
+      ? '<div class="drop-actions">' +
+          '<button type="button" class="drop-all" data-drop-play-history>' + ICONS.play + '<span>Tocar histórico</span></button>' +
+          '<button type="button" class="drop-all" data-drop-clear>' + ICONS.trash + '<span>Limpar</span></button>' +
+        '</div>'
+      : '';
+
+    return chips + rows + actions;
+  }
+
+  function openSearchDrop() {
+    if (!searchDrop) return;
+    const html = searchDropHTML(searchInput.value.trim());
+    if (!html) { closeSearchDrop(); return; }
+    searchDrop.innerHTML = html;
+    searchDrop.classList.add('open');
+  }
+
+  function closeSearchDrop() {
+    if (!searchDrop) return;
+    searchDrop.classList.remove('open');
+    searchDrop.innerHTML = '';
   }
 
   function startTick() {
@@ -2067,6 +2257,7 @@
       if (!q) return;
       event.preventDefault();
       pushSearch(q);
+      closeSearchDrop();
       stopYouTubeSearch();
       route = { name: 'search', q: q };
       render();
@@ -2132,11 +2323,6 @@
         navigate({ name: 'local' });
         return;
       }
-      if (event.target.closest('[data-open-history]')) {
-        searchInput.value = '';
-        navigate({ name: 'history' });
-        return;
-      }
       const pl = event.target.closest('[data-open-playlist]');
       if (pl) {
         searchInput.value = '';
@@ -2152,35 +2338,9 @@
     prevBtn.addEventListener('click', prevTrack);
     nextBtn.addEventListener('click', () => nextTrack(false));
 
-    shuffleBtn.addEventListener('click', () => {
-      player.shuffle = !player.shuffle;
-      persistPrefs();
-      updatePlayerBar();
-      toast(player.shuffle ? 'Aleatório ativado' : 'Aleatório desativado');
-    });
-
-    repeatBtn.addEventListener('click', () => {
-      player.repeat = player.repeat === 'off' ? 'all' : player.repeat === 'all' ? 'one' : 'off';
-      persistPrefs();
-      updatePlayerBar();
-      toast('Repetir: ' + (player.repeat === 'off' ? 'desligado' : player.repeat === 'all' ? 'playlist' : 'uma música'));
-    });
-
-    seekEl.addEventListener('input', () => {
-      if (yt.playing) {
-        if (!yt.ready || !yt.player) return;
-        const ytDur = Number(yt.player.getDuration()) || 0;
-        if (!ytDur) return;
-        try { yt.player.seekTo((Number(seekEl.value) / 1000) * ytDur, true); } catch (err) {}
-        updateProgress();
-        return;
-      }
-
-      const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
-      if (!dur) return;
-      audio.currentTime = (Number(seekEl.value) / 1000) * dur;
-      updateProgress();
-    });
+    shuffleBtn.addEventListener('click', toggleShuffle);
+    repeatBtn.addEventListener('click', cycleRepeat);
+    seekEl.addEventListener('input', () => seekTo(seekEl.value));
 
     volumeEl.addEventListener('input', () => {
       setVolume(Number(volumeEl.value) / 100);
@@ -2200,6 +2360,88 @@
       npBlock.addEventListener('click', event => {
         if (event.target.closest('#np-like')) return;
         openNowPlaying();
+      });
+    }
+
+    /* painel “a tocar”: um evento só para todos os botões */
+    if (npPanel) {
+      npPanel.addEventListener('click', event => {
+        if (event.target.closest('[data-np-close]')) { closeNowPlaying(); return; }
+        if (event.target.closest('#np-panel-play')) { togglePlay(); return; }
+        if (event.target.closest('#np-panel-prev')) { prevTrack(); return; }
+        if (event.target.closest('#np-panel-next')) { nextTrack(false); return; }
+        if (event.target.closest('#np-panel-shuffle')) { toggleShuffle(); return; }
+        if (event.target.closest('#np-panel-repeat')) { cycleRepeat(); return; }
+        if (event.target.closest('#np-panel-queue')) { closeNowPlaying(); toggleQueue(); return; }
+        if (event.target.closest('#np-panel-like')) { likeNowPlaying(); return; }
+        const addBtn = event.target.closest('[data-np-add]');
+        if (addBtn) addNowPlaying(addBtn);
+      });
+
+      if (npPanelSeek) npPanelSeek.addEventListener('input', () => seekTo(npPanelSeek.value));
+    }
+
+    /* histórico dentro da barra de pesquisa */
+    if (searchDrop) {
+      searchDrop.addEventListener('click', event => {
+        const termBtn = event.target.closest('[data-search-term]');
+        if (termBtn) {
+          const term = termBtn.dataset.searchTerm || '';
+          searchInput.value = term;
+          closeSearchDrop();
+          pushSearch(term);
+          stopYouTubeSearch();
+          route = { name: 'search', q: term };
+          stack.length = 0;
+          mainEl.scrollTop = 0;
+          render();
+          searchYouTube(term);
+          searchInput.blur();
+          return;
+        }
+
+        const row = event.target.closest('[data-drop-play]');
+        if (row) {
+          closeSearchDrop();
+          play(row.dataset.dropPlay, null, 'history');
+          searchInput.blur();
+          return;
+        }
+
+        if (event.target.closest('[data-drop-play-history]')) {
+          closeSearchDrop();
+          playAll(historyIds(), 'history', 'Histórico');
+          searchInput.blur();
+          return;
+        }
+
+        if (event.target.closest('[data-drop-clear]')) {
+          clearHistory();
+          closeSearchDrop();
+        }
+      });
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('focus', openSearchDrop);
+      searchInput.addEventListener('input', openSearchDrop);
+      searchInput.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeSearchDrop();
+      });
+    }
+
+    document.addEventListener('click', event => {
+      if (!searchDrop || !searchDrop.classList.contains('open')) return;
+      if (event.target.closest('.searchbox') || event.target.closest('#search-drop')) return;
+      closeSearchDrop();
+    });
+
+    /* botão de histórico dentro da barra de pesquisa */
+    if (searchHistBtn) {
+      searchHistBtn.addEventListener('click', event => {
+        event.preventDefault();
+        if (searchDrop && searchDrop.classList.contains('open')) closeSearchDrop();
+        else openSearchDrop();
       });
     }
 
@@ -2314,13 +2556,14 @@
     document.addEventListener('click', event => {
       if (!menuEl.classList.contains('open')) return;
       if (event.target.closest('#menu') || event.target.closest('[data-act="more"]') ||
-        event.target.closest('[data-yt-save]')) return;
+        event.target.closest('[data-yt-save]') || event.target.closest('[data-np-add]')) return;
       closeMenu();
     });
 
     document.addEventListener('click', event => {
       if (!queueEl || !queueEl.classList.contains('open')) return;
-      if (event.target.closest('#queue') || event.target.closest('#btn-queue')) return;
+      if (event.target.closest('#queue') || event.target.closest('#btn-queue') ||
+        event.target.closest('#np-panel-queue')) return;
       closeQueue();
     });
 
@@ -2330,6 +2573,7 @@
         if (menuEl.classList.contains('open')) closeMenu();
         else if (modalRoot.classList.contains('open')) closeModal();
         else if (queueEl && queueEl.classList.contains('open')) closeQueue();
+        else if (npPanelOpen()) closeNowPlaying();
         return;
       }
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
