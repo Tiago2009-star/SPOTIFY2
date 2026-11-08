@@ -120,14 +120,77 @@
 
   function saveAccounts() {
     try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(contas)); } catch (err) {}
+    if (window.OndaDB) contas.users.forEach(user => window.OndaDB.saveAccount(user));
+  }
+
+  /* contas que ficaram guardadas na base de dados voltam para a lista */
+  function loadAccountsFromDb() {
+    if (!window.OndaDB) return Promise.resolve(0);
+
+    return window.OndaDB.loadAccounts().then(users => {
+      if (!Array.isArray(users)) return 0;
+
+      let added = 0;
+      users.forEach(user => {
+        if (!user || !user.id) return;
+        const existing = contas.users.find(u => u.id === user.id);
+        if (!existing) {
+          contas.users.push(user);
+          added += 1;
+          return;
+        }
+        if (!existing.avatar && user.avatar) existing.avatar = user.avatar;
+        if (!existing.hash && user.hash) existing.hash = user.hash;
+        if (!existing.salt && user.salt) existing.salt = user.salt;
+      });
+
+      if (added) {
+        try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(contas)); } catch (err) {}
+      }
+      return added;
+    }).catch(() => 0);
   }
 
   function currentAccount() {
     return contas.users.find(u => u.id === contas.currentId) || null;
   }
 
+  /* conta na nuvem (Firebase) ou conta local (IndexedDB) */
+  let cloudUser = null;
+  let cloudSaveTimer = 0;
+
   function isLoggedIn() {
-    return !!currentAccount();
+    return !!(cloudUser || currentAccount());
+  }
+
+  function activeUser() {
+    if (cloudUser) return cloudUser;
+    return currentAccount();
+  }
+
+  /* aplica uma biblioteca vinda da nuvem (ou da base de dados local) */
+  function applyLibrary(lib) {
+    if (!lib) return;
+
+    if (Array.isArray(lib.playlists)) store.playlists = lib.playlists;
+    if (Array.isArray(lib.likes)) store.likes = lib.likes;
+    if (Array.isArray(lib.recent)) store.recent = lib.recent;
+    if (Array.isArray(lib.searches)) store.searches = lib.searches;
+    if (Array.isArray(lib.ytTracks)) store.ytTracks = lib.ytTracks;
+    if (lib.prefs) {
+      if (typeof lib.prefs.volume === 'number') store.prefs.volume = lib.prefs.volume;
+      if (typeof lib.prefs.shuffle === 'boolean') store.prefs.shuffle = lib.prefs.shuffle;
+      if (typeof lib.prefs.repeat === 'string') store.prefs.repeat = lib.prefs.repeat;
+    }
+
+    clearYtTracks();
+    store.ytTracks.forEach(record => registerYtTrack(record));
+
+    likedSet.clear();
+    store.likes.forEach(id => likedSet.add(id));
+
+    player.shuffle = !!store.prefs.shuffle;
+    player.repeat = store.prefs.repeat === 'all' || store.prefs.repeat === 'one' ? store.prefs.repeat : 'off';
   }
 
   function keyForAccount(id) {
@@ -177,7 +240,10 @@
   function loadStoreFor(accountId) {
     resetStore();
     storeKey = accountId ? keyForAccount(accountId) : STORAGE_KEY;
-    try { applySaved(localStorage.getItem(storeKey)); } catch (err) {}
+
+    let raw = null;
+    try { raw = localStorage.getItem(storeKey); } catch (err) {}
+    applySaved(raw);
 
     /* vídeos que esta conta salvou em favoritos/playlists voltam aqui */
     clearYtTracks();
@@ -188,6 +254,32 @@
 
     player.shuffle = !!store.prefs.shuffle;
     player.repeat = store.prefs.repeat === 'all' || store.prefs.repeat === 'one' ? store.prefs.repeat : 'off';
+
+    /* sem cópia rápida no localStorage, a biblioteca vem da base de dados */
+    if (!raw && accountId && window.OndaDB) {
+      window.OndaDB.loadLibrary(accountId).then(lib => {
+        if (!lib || contas.currentId !== accountId) return;
+
+        if (lib.playlists.length) store.playlists = lib.playlists;
+        if (lib.likes.length) store.likes = lib.likes;
+        if (lib.recent.length) store.recent = lib.recent;
+        if (lib.searches.length) store.searches = lib.searches;
+        if (lib.ytTracks.length) store.ytTracks = lib.ytTracks;
+        if (lib.prefs) {
+          if (typeof lib.prefs.volume === 'number') store.prefs.volume = lib.prefs.volume;
+          store.prefs.shuffle = !!lib.prefs.shuffle;
+          store.prefs.repeat = lib.prefs.repeat || 'off';
+        }
+
+        clearYtTracks();
+        store.ytTracks.forEach(record => registerYtTrack(record));
+        likedSet.clear();
+        store.likes.forEach(id => likedSet.add(id));
+        player.shuffle = !!store.prefs.shuffle;
+        player.repeat = store.prefs.repeat === 'all' || store.prefs.repeat === 'one' ? store.prefs.repeat : 'off';
+        render();
+      }).catch(() => {});
+    }
   }
 
   /* a biblioteca que existia antes das contas passa para a primeira conta criada */
@@ -240,6 +332,9 @@
   }
 
   function afterLogin() {
+    /* a cópia local passa a ser por conta da nuvem */
+    if (cloudUser) storeKey = 'onda.cloud.v1:' + cloudUser.id;
+
     player.queue = [];
     player.pos = -1;
     player.currentId = null;
@@ -300,6 +395,8 @@
   }
 
   function logoutAccount() {
+    if (window.OndaCloud && cloudUser) window.OndaCloud.signOutUser();
+    cloudUser = null;
     contas.currentId = '';
     saveAccounts();
 
@@ -326,26 +423,38 @@
 
   function authHTML() {
     const creating = authMode === 'create';
-    const known = contas.users.map(u => esc(u.name)).join(', ');
+    const cloud = !!window.OndaCloud;
+    const known = cloud ? '' : contas.users.map(u => esc(u.name)).join(', ');
 
     return '<div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">' +
       '<div class="auth-brand">Onda</div>' +
       '<h1 class="auth-title" id="auth-title">' + (creating ? 'Crie a sua conta' : 'Entre na sua conta') + '</h1>' +
       '<p class="auth-sub">' + (creating
-        ? 'É obrigatório ter conta para ouvir música. Curtidas, playlists e histórico ficam guardados na conta.'
+        ? (cloud
+            ? 'É obrigatório ter conta para ouvir música. A conta guarda curtidas, playlists e histórico na nuvem.'
+            : 'É obrigatório ter conta para ouvir música. Curtidas, playlists e histórico ficam guardados na conta.')
         : 'Entre para ouvir música e recuperar a sua biblioteca.') + '</p>' +
       '<form class="auth-form" id="auth-form">' +
-        '<label class="auth-label">Nome' +
-          '<input id="auth-name" type="text" autocomplete="username" required minlength="2" placeholder="O seu nome">' +
-        '</label>' +
+        (cloud
+          ? '<label class="auth-label">Email' +
+              '<input id="auth-email" type="email" autocomplete="email" required placeholder="voce@email.com">' +
+            '</label>'
+          : '') +
+        (cloud && !creating
+          ? ''
+          : '<label class="auth-label">Nome' +
+              '<input id="auth-name" type="text" autocomplete="' + (cloud ? 'nickname' : 'username') +
+                '" required minlength="2" placeholder="O seu nome">' +
+            '</label>') +
         '<label class="auth-label">Palavra-passe' +
           '<input id="auth-pass" type="password" autocomplete="' + (creating ? 'new-password' : 'current-password') +
-            '" required minlength="4" placeholder="Mínimo 4 caracteres">' +
+            '" required minlength="' + (cloud ? '6' : '4') + '" placeholder="' +
+            (cloud ? 'Mínimo 6 caracteres' : 'Mínimo 4 caracteres') + '">' +
         '</label>' +
         (creating
           ? '<label class="auth-label">Repetir palavra-passe' +
-              '<input id="auth-pass2" type="password" autocomplete="new-password" required minlength="4" ' +
-                'placeholder="Repita a palavra-passe">' +
+              '<input id="auth-pass2" type="password" autocomplete="new-password" required minlength="' +
+                (cloud ? '6' : '4') + '" placeholder="Repita a palavra-passe">' +
             '</label>'
           : '') +
         '<div class="auth-error" id="auth-error" role="alert"></div>' +
@@ -356,7 +465,9 @@
       '<button class="auth-switch" type="button" data-auth-switch="' + (creating ? 'login' : 'create') + '">' +
         (creating ? 'Já tenho conta — entrar' : 'Ainda não tenho conta — criar') +
       '</button>' +
-      (known ? '<p class="auth-accounts">Contas neste aparelho: ' + known + '</p>' : '') +
+      (cloud
+        ? '<p class="auth-accounts">Conta na nuvem (Firebase): a mesma conta abre a biblioteca em qualquer aparelho.</p>'
+        : (known ? '<p class="auth-accounts">Contas neste aparelho: ' + known + '</p>' : '')) +
     '</div>';
   }
 
@@ -391,12 +502,15 @@
     if (!el) return;
 
     const nameEl = el.querySelector('#auth-name');
+    const emailEl = el.querySelector('#auth-email');
     const passEl = el.querySelector('#auth-pass');
     const pass2El = el.querySelector('#auth-pass2');
     const errorEl = el.querySelector('#auth-error');
     const button = el.querySelector('#auth-submit');
     const creating = authMode === 'create';
+    const cloud = !!window.OndaCloud;
     const name = nameEl ? nameEl.value : '';
+    const email = emailEl ? emailEl.value.trim() : '';
     const pass = passEl ? passEl.value : '';
 
     if (errorEl) errorEl.textContent = '';
@@ -409,17 +523,45 @@
       button.textContent = 'Aguarde…';
     }
 
-    const action = creating ? createAccount(name, pass) : loginAccount(name, pass);
-    action.then(() => {
-      afterLogin();
-      toast(creating ? 'Conta criada. Boas músicas!' : 'Bem-vindo de volta!');
-    }).catch(err => {
+    const fail = err => {
       if (button) {
         button.disabled = false;
         button.textContent = creating ? 'Criar conta e ouvir' : 'Entrar e ouvir';
       }
-      if (errorEl) errorEl.textContent = (err && err.message) || 'Não foi possível continuar.';
-    });
+      const message = (window.OndaCloud && window.OndaCloud.friendly)
+        ? window.OndaCloud.friendly(err)
+        : (err && err.message) || 'Não foi possível continuar.';
+      if (errorEl) errorEl.textContent = message;
+    };
+
+    /* na nuvem: Firebase Authentication + Firestore */
+    if (cloud) {
+      const cloudAction = creating
+        ? window.OndaCloud.signUp(name, email, pass)
+        : window.OndaCloud.signIn(email, pass);
+
+      cloudAction.then(user => {
+        cloudUser = {
+          id: user.id,
+          name: user.name || '',
+          email: user.email || email,
+          avatar: user.avatar || ''
+        };
+        storeKey = 'onda.cloud.v1:' + user.id;
+        return window.OndaCloud.loadLibrary(user.id);
+      }).then(lib => {
+        applyLibrary(lib);
+        afterLogin();
+        toast(creating ? 'Conta criada na nuvem. Boas músicas!' : 'Bem-vindo de volta!');
+      }).catch(fail);
+      return;
+    }
+
+    const action = creating ? createAccount(name, pass) : loginAccount(name, pass);
+    action.then(() => {
+      afterLogin();
+      toast(creating ? 'Conta criada. Boas músicas!' : 'Bem-vindo de volta!');
+    }).catch(fail);
   }
 
   const likedSet = new Set(store.likes);
@@ -461,7 +603,17 @@
 
   const save = () => {
     if (!isLoggedIn()) return;
+    /* cópia rápida local, para a interface arrancar sem esperar pela rede */
     try { localStorage.setItem(storeKey, JSON.stringify(store)); } catch (err) {}
+
+    if (window.OndaDB && !cloudUser) window.OndaDB.saveLibrary(contas.currentId, store);
+
+    if (cloudUser && window.OndaCloud) {
+      clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = setTimeout(() => {
+        window.OndaCloud.saveLibrary(cloudUser.id, store).catch(() => {});
+      }, 700);
+    }
   };
 
   /* catálogo, arquivos locais e os vídeos salvos na conta */
@@ -565,6 +717,7 @@
   const searchInput = $('#search-input');
   const navHomeBtn = $('#nav-home');
   const navSearchBtn = $('#nav-search');
+  const navProfileBtn = $('#nav-profile');
   const backBtn = $('#btn-back');
   const menuToggleBtn = $('#btn-menu');
   const createPlaylistBtn = $('#btn-create-playlist');
@@ -679,7 +832,9 @@
 
   function heroHTML(o) {
     return '<header class="view-header" style="--vh-a:' + o.colors[0] + ';--vh-b:' + o.colors[1] + '">' +
-      '<div class="vh-cover">' + coverHTML(o.coverTitle, o.colors, '', o.coverIcon || '') + '</div>' +
+      '<div class="vh-cover">' + (o.coverImg
+        ? '<div class="cover cover-img" style="background-image:url(\'' + esc(o.coverImg) + '\')"></div>'
+        : coverHTML(o.coverTitle, o.colors, '', o.coverIcon || '')) + '</div>' +
       '<div class="vh-meta">' +
         '<span class="vh-type">' + esc(o.type) + '</span>' +
         '<h1>' + esc(o.title) + '</h1>' +
@@ -1475,10 +1630,81 @@
     toast('Histórico limpo');
   }
 
+  /* -------------------- imagem de perfil da conta -------------------- */
+  function resizeImage(file, size) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Não foi possível ler a imagem'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Imagem inválida'));
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const scale = Math.min(1, size / Math.max(img.width, img.height));
+            canvas.width = Math.max(1, Math.round(img.width * scale));
+            canvas.height = Math.max(1, Math.round(img.height * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.82));
+          } catch (err) {
+            reject(err);
+          }
+        };
+        img.src = String(reader.result);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function pickAvatar() {
+    const account = activeUser();
+    if (!account) return;
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+
+      resizeImage(file, 256).then(dataUrl => {
+        account.avatar = dataUrl;
+
+        if (cloudUser && window.OndaCloud) {
+          window.OndaCloud.saveAccount(cloudUser.id, { avatar: dataUrl }).catch(() => {});
+        } else {
+          saveAccounts();
+        }
+
+        render();
+        toast('Imagem de perfil atualizada');
+      }).catch(() => toast('Não foi possível usar essa imagem.'));
+    });
+    input.click();
+  }
+
+  function clearAvatar() {
+    const account = activeUser();
+    if (!account || !account.avatar) return;
+
+    delete account.avatar;
+
+    if (cloudUser && window.OndaCloud) {
+      window.OndaCloud.saveAccount(cloudUser.id, { avatar: '' }).catch(() => {});
+    } else {
+      saveAccounts();
+    }
+
+    render();
+    toast('Imagem de perfil removida');
+  }
+
   function profileHTML() {
     const stat = (value, label) => '<div class="stat"><strong>' + value + '</strong><span>' + esc(label) + '</span></div>';
-    const account = currentAccount();
-    const nome = account ? account.name : 'Sem conta';
+    const account = activeUser();
+    const nome = account ? account.name || account.email || 'Sem conta' : 'Sem conta';
+    const avatar = account && account.avatar ? account.avatar : '';
     const playlists = store.playlists.length;
     const locals = localTracks.length;
     const likes = likedTrackIds().length;
@@ -1487,10 +1713,14 @@
       colors: PROFILE_COLORS,
       coverTitle: 'Perfil',
       coverIcon: ICONS.user,
+      coverImg: avatar,
       type: 'Sua conta',
       title: nome,
-      subtitle: 'Sua biblioteca fica guardada nesta conta',
+      subtitle: cloudUser ? 'Sua biblioteca fica guardada na nuvem' : 'Sua biblioteca fica guardada nesta conta',
       actions:
+        '<button class="btn" data-act="change-avatar">' + ICONS.user + '<span>' +
+          (avatar ? 'Mudar imagem' : 'Escolher imagem') + '</span></button>' +
+        (avatar ? '<button class="btn" data-act="clear-avatar">' + ICONS.trash + '<span>Remover imagem</span></button>' : '') +
         '<button class="btn" data-act="create-playlist">' + ICONS.plus + '<span>Nova playlist</span></button>' +
         '<button class="btn" data-act="add-files">' + ICONS.upload + '<span>Adicionar músicas</span></button>' +
         '<button class="btn" data-act="logout">' + ICONS.close + '<span>Sair da conta</span></button>',
@@ -1501,10 +1731,9 @@
           stat(store.recent.length, 'no histórico') +
           stat(locals, locals === 1 ? 'arquivo local' : 'arquivos locais') +
         '</div>' +
-        '<div class="note"><strong>Sua conta “' + esc(nome) + '”:</strong> curtidas, playlists, histórico, buscas e ' +
-          'volume ficam guardados nela. Ao sair, a biblioteca continua guardada e volta quando entrar de novo. ' +
-          'A conta é local a este navegador — noutro aparelho, crie a conta de novo (os arquivos importados ficam ' +
-          'só neste aparelho).</div>'
+        '<div class="note"><strong>Conta “' + esc(nome) + '”:</strong> curtidas, playlists (com as músicas de ' +
+          'cada uma), histórico, buscas e volume ficam guardados na base de dados do app. Ao sair, a biblioteca ' +
+          'continua guardada e volta quando entrar de novo.</div>'
     });
   }
 
@@ -1553,6 +1782,7 @@
   function renderSidebar() {
     navHomeBtn.classList.toggle('active', route.name === 'home');
     navSearchBtn.classList.toggle('active', route.name === 'search');
+    if (navProfileBtn) navProfileBtn.classList.toggle('active', route.name === 'profile');
     renderTabbar();
 
     const likedCount = likedTrackIds().length;
@@ -2714,6 +2944,14 @@
         logoutAccount();
         return;
       }
+      if (action === 'change-avatar') {
+        pickAvatar();
+        return;
+      }
+      if (action === 'clear-avatar') {
+        clearAvatar();
+        return;
+      }
       return;
     }
 
@@ -2949,6 +3187,18 @@
       });
     }
 
+    if (navProfileBtn) {
+      navProfileBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        stopYouTubeSearch();
+        stack.length = 0;
+        sidebarEl.classList.remove('open');
+        route = { name: 'profile' };
+        mainEl.scrollTop = 0;
+        render();
+      });
+    }
+
     /* navegação do telemóvel, na parte de baixo */
     if (tabHome) {
       tabHome.addEventListener('click', () => {
@@ -3128,6 +3378,36 @@
 
     /* conta obrigatória: sem login o app fica atrás do portão */
     if (!isLoggedIn()) showAuth('login');
+
+    /* sessão da nuvem (Firebase): retoma a conta e a biblioteca dela */
+    if (window.OndaCloud) {
+      window.OndaCloud.session().then(user => {
+        if (!user) return;
+
+        cloudUser = {
+          id: user.uid,
+          name: user.displayName || '',
+          email: user.email || '',
+          avatar: ''
+        };
+        storeKey = 'onda.cloud.v1:' + user.uid;
+
+        return window.OndaCloud.loadLibrary(user.uid).then(lib => {
+          if (!cloudUser || cloudUser.id !== user.uid) return;
+          cloudUser.name = (lib && lib.name) || cloudUser.name;
+          cloudUser.avatar = (lib && lib.avatar) || '';
+          applyLibrary(lib);
+          hideAuth();
+          render();
+          updatePlayerBar();
+        });
+      }).catch(() => {});
+    }
+
+    /* contas guardadas na base de dados aparecem no ecrã de entrada */
+    loadAccountsFromDb().then(added => {
+      if (added > 0 && !isLoggedIn() && document.getElementById('auth')) showAuth('login');
+    }).catch(() => {});
 
     localStore('readonly', objectStore => objectStore.getAll())
       .then(records => {

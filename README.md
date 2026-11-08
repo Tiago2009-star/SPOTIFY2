@@ -71,6 +71,8 @@ index.html      estrutura da tela
 styles.css      tema escuro e layout
 js/catalog.js   catálogo (álbuns e faixas)
 js/config.js    chave da YouTube Data API (ignorado pelo git)
+js/db.js        base de dados IndexedDB (contas, playlists, faixas, curtidas)
+js/cloud.js     Firebase Authentication + Firestore (contas e playlists na nuvem)
 js/app.js       player, views, playlists, favoritos, contas, persistência
 ```
 
@@ -105,6 +107,59 @@ carregamento do vídeo pode abrir a app do YouTube, e **o áudio do YouTube não
 continua com o ecrã desligado**. Para ouvir em segundo plano, importe o áudio
 como arquivo em “Minhas músicas” (ou aponte o `src` no `js/catalog.js`).
 
+## Nuvem (Firebase)
+
+Para ter as **contas, playlists e músicas de cada playlist na nuvem** — a mesma
+conta no telemóvel e no PC — o app usa **Firebase Authentication + Firestore**:
+
+1. No [console do Firebase](https://console.firebase.google.com/), no projeto
+   `spotify-copia-d898f`, crie o **Firestore Database** (edição Standard).
+2. Ative **Authentication → Sign-in method → Email/Password**.
+3. Registe uma **app Web** (Configurações do projeto → Seus apps → Web) e copie
+   o `firebaseConfig`.
+4. Cole em `js/config.js` (ficheiro ignorado pelo git — no site publicado ele
+   tem de ser enviado à parte):
+
+```js
+window.ONDA_CONFIG = {
+  youtubeApiKey: 'SUA_CHAVE',
+  firebaseConfig: {
+    apiKey: '...',
+    authDomain: 'spotify-copia-d898f.firebaseapp.com',
+    projectId: 'spotify-copia-d898f',
+    storageBucket: 'spotify-copia-d898f.appspot.com',
+    messagingSenderId: '...',
+    appId: '...'
+  }
+};
+```
+
+5. Publique estas regras no Firestore (separador **Regras**):
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+      match /playlists/{playlistId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+  }
+}
+```
+
+Estrutura na nuvem: `users/{uid}` guarda o nome, email, imagem de perfil,
+curtidas, histórico, buscas e preferências; `users/{uid}/playlists/{id}` guarda
+cada playlist com o campo `tracks` (as músicas dela).
+
+Com `firebaseConfig` preenchido, o login passa a ser **email + palavra-passe**
+(mínimo 6 caracteres, regra do Firebase) e a sessão mantém-se entre visitas. Sem
+configuração, o app funciona como antes, com a base de dados local (IndexedDB).
+O Firestore exige o app servido por http(s): `file://` não funciona — use
+`iniciar.bat` ou o GitHub Pages.
+
 ## Escrã desligado e segundo plano
 
 Os **arquivos locais** (e qualquer faixa do catálogo) tocam pelo player do
@@ -117,18 +172,30 @@ Se a música ficar **muito tempo pausada**, ao voltar basta tocar em play: o app
 recarrega o áudio do ponto onde parou e continua (o browser pode descartar o
 buffer enquanto o telemóvel está bloqueado).
 
-## Contas
+## Contas e base de dados
 
-O app **exige login para tocar música**. A conta é nome + palavra-passe e fica
-só neste navegador, com a palavra-passe protegida por *hash* com *salt* (não há
-servidor, nada é enviado para fora).
+O app **exige login para tocar música**. A conta é nome + palavra-passe, e a
+palavra-passe é guardada com *hash* + *salt* (nada sai do navegador). Em
+**Perfil** — também na barra lateral, por baixo de “Buscar” — pode escolher ou
+remover a **imagem de perfil**; a imagem é reduzida a 256 px antes de ser
+guardada.
 
-Cada conta tem a sua própria biblioteca — curtidas, playlists, histórico, buscas
-recentes e volume — e ela continua guardada quando se sai e se entra de novo. A
-primeira conta criada herda a biblioteca que já existia no navegador. O botão
-“Sair da conta” fica em **Perfil**.
+Os dados ficam numa **base de dados IndexedDB** (`js/db.js`), com tabelas
+separadas:
 
-Limitações: a conta **não sincroniza entre aparelhos** (para isso seria preciso
-um serviço de autenticação e base de dados) e os arquivos importados em “Minhas
-músicas” ficam no IndexedDB deste aparelho. Limpar os dados do site apaga contas
-e bibliotecas.
+| Tabela | O que guarda |
+| --- | --- |
+| `contas` | contas criadas (nome, hash, imagem) |
+| `playlists` | playlists de cada conta (`accountId`) |
+| `playlist_tracks` | músicas de cada playlist, com a posição |
+| `likes` | músicas curtidas de cada conta |
+| `prefs` | volume, aleatório, repetir, recentes e buscas |
+
+O `localStorage` continua a ser escrito como cópia rápida, para a interface
+arrancar sem esperar pela base de dados; se essa cópia desaparecer, a biblioteca
+é recuperada da base de dados.
+
+Limitações: a base de dados é **local ao navegador** — não sincroniza entre
+telemóvel e PC (para isso seria preciso um serviço de autenticação e base de
+dados na nuvem, com conta e chaves próprias) — e os arquivos importados em
+“Minhas músicas” ficam no IndexedDB deste aparelho.

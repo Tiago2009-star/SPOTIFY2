@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Onda — teste do Firebase</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; padding: 32px 20px; background: #0b0b0d; color: #f2f2f4;
+      font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    }
+    main { max-width: 620px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    p.sub { color: #9b9ba3; margin: 0 0 20px; }
+    #status { padding: 10px 12px; border-radius: 10px; background: #17171b; margin-bottom: 18px; }
+    #status.on { background: #10321d; color: #7ff0a8; }
+    #status.off { background: #33161a; color: #ffa3ad; }
+    form { display: grid; gap: 10px; margin-bottom: 16px; }
+    label { display: grid; gap: 5px; font-size: 13px; color: #b9b9c2; }
+    input {
+      padding: 10px 12px; border-radius: 9px; border: 1px solid #2b2b33;
+      background: #14141a; color: inherit; font: inherit;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    button {
+      padding: 10px 14px; border-radius: 999px; border: 1px solid #2b2b33;
+      background: #1c1c22; color: inherit; font: inherit; cursor: pointer;
+    }
+    button.primary { background: #1ed760; border-color: #1ed760; color: #04120a; font-weight: 600; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    pre {
+      margin: 0; padding: 12px; border-radius: 10px; background: #101014;
+      font: 12.5px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap;
+      max-height: 320px; overflow: auto;
+    }
+    .ok { color: #7ff0a8; }
+    .bad { color: #ffa3ad; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Teste do Firebase</h1>
+  <p class="sub">Verifica a configuração de <code>js/config.js</code>, o login por email e a escrita em
+    <code>users/{uid}</code> — as mesmas regras que o app Onda usa.</p>
+
+  <div id="status">A ler a configuração…</div>
+
+  <form id="test-form">
+    <label>Email <input id="t-email" type="email" autocomplete="email" required placeholder="voce@email.com"></label>
+    <label>Palavra-passe <input id="t-pass" type="password" autocomplete="current-password" required minlength="6" placeholder="mínimo 6 caracteres"></label>
+  </form>
+
+  <div class="row">
+    <button class="primary" id="btn-create" type="button">Criar conta</button>
+    <button id="btn-login" type="button">Entrar</button>
+    <button id="btn-write" type="button">Testar escrita</button>
+    <button id="btn-read" type="button">Testar leitura</button>
+    <button id="btn-out" type="button">Sair</button>
+  </div>
+
+  <pre id="log">—</pre>
+</main>
+
+<!-- a configuração vive num sítio só: o mesmo ficheiro que o app usa -->
+<script src="js/config.js"></script>
+
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+  import {
+    getAuth,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signOut,
+    onAuthStateChanged
+  } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+  import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
+
+  const statusEl = document.getElementById('status');
+  const logEl = document.getElementById('log');
+  const emailEl = document.getElementById('t-email');
+  const passEl = document.getElementById('t-pass');
+  const buttons = Array.from(document.querySelectorAll('button'));
+
+  let lines = [];
+
+  function log(text, kind) {
+    const tag = kind ? '<span class="' + kind + '">' : '<span>';
+    lines.push(tag + text + '</span>');
+    logEl.innerHTML = lines.slice(-40).join('\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatus(text, ok) {
+    statusEl.textContent = text;
+    statusEl.className = ok === true ? 'on' : ok === false ? 'off' : '';
+  }
+
+  function friendly(err) {
+    const code = (err && err.code) || '';
+    if (code === 'auth/operation-not-allowed') {
+      return 'Ative Authentication → Sign-in method → Email/Password no Firebase.';
+    }
+    if (code === 'auth/email-already-in-use') return 'Esse email já tem conta — use "Entrar".';
+    if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') return 'Email ou palavra-passe incorretos.';
+    if (code === 'auth/weak-password') return 'Palavra-passe com menos de 6 caracteres.';
+    if (code === 'auth/network-request-failed') return 'Sem ligação à internet.';
+    if (code === 'permission-denied' || code === 'firestore/permission-denied') {
+      return 'Firestore recusou a escrita: publique as regras users/{uid}.';
+    }
+    if (code === 'unavailable') return 'Firestore indisponível — confirme que o banco foi criado.';
+    return (err && (err.code ? err.code + ': ' : '') + err.message) || 'Erro desconhecido.';
+  }
+
+  const cfg = (window.ONDA_CONFIG && window.ONDA_CONFIG.firebaseConfig) || null;
+
+  if (!cfg || !cfg.apiKey || !cfg.apiKey.trim() || !cfg.appId || !cfg.appId.trim()) {
+    setStatus('Falta a configuração: preencha apiKey, messagingSenderId e appId em js/config.js.', false);
+    buttons.forEach(b => { b.disabled = true; });
+    log('js/config.js está sem os dados do Firebase.', 'bad');
+    log('Firebase → Configurações do projeto → Seus apps → Web → Configuração do SDK.', 'bad');
+  } else {
+    start(cfg);
+  }
+
+  function start(config) {
+    const app = initializeApp(config);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let current = null;
+
+    setStatus('Configuração lida (projeto ' + config.projectId + '). Ainda sem sessão.', null);
+    log('Configuração lida: ' + config.projectId, 'ok');
+
+    onAuthStateChanged(auth, user => {
+      current = user || null;
+      if (current) {
+        setStatus('Ligado como ' + current.email, true);
+        log('Sessão ativa: ' + current.uid, 'ok');
+      } else {
+        setStatus('Sem sessão. Crie a conta ou entre.', null);
+      }
+    });
+
+    const run = fn => {
+      buttons.forEach(b => { b.disabled = true; });
+      Promise.resolve()
+        .then(fn)
+        .catch(err => log(friendly(err), 'bad'))
+        .then(() => { buttons.forEach(b => { b.disabled = false; }); });
+    };
+
+    document.getElementById('btn-create').addEventListener('click', () => run(async () => {
+      const email = emailEl.value.trim();
+      const pass = passEl.value;
+      if (!email || pass.length < 6) { log('Preencha email e palavra-passe (6+ caracteres).', 'bad'); return; }
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      log('Conta criada: ' + cred.user.uid, 'ok');
+    }));
+
+    document.getElementById('btn-login').addEventListener('click', () => run(async () => {
+      const cred = await signInWithEmailAndPassword(auth, emailEl.value.trim(), passEl.value);
+      log('Entrou: ' + cred.user.uid, 'ok');
+    }));
+
+    document.getElementById('btn-write').addEventListener('click', () => run(async () => {
+      if (!current) { log('Entre primeiro para testar a escrita.', 'bad'); return; }
+      await setDoc(doc(db, 'users', current.uid), {
+        name: (current.email || '').split('@')[0],
+        email: current.email || '',
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      log('users/' + current.uid + ' escrito.', 'ok');
+
+      await setDoc(doc(db, 'users', current.uid, 'playlists', 'teste'), {
+        name: 'Playlist de teste',
+        colors: ['#1ed760', '#0b6b34'],
+        tracks: [{ id: 'sh-1', title: 'SoundHelix Song 1' }],
+        position: 0,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      log('users/' + current.uid + '/playlists/teste escrito.', 'ok');
+    }));
+
+    document.getElementById('btn-read').addEventListener('click', () => run(async () => {
+      if (!current) { log('Entre primeiro para testar a leitura.', 'bad'); return; }
+      const snap = await getDoc(doc(db, 'users', current.uid));
+      log(snap.exists() ? 'Lido: ' + JSON.stringify(snap.data()) : 'users/' + current.uid + ' ainda não existe.', snap.exists() ? 'ok' : 'bad');
+    }));
+
+    document.getElementById('btn-out').addEventListener('click', () => run(async () => {
+      await signOut(auth);
+      log('Sessão terminada.', 'ok');
+    }));
+  }
+</script>
+</body>
+</html>

@@ -1,12 +1,21 @@
-/*
- * Configuração local do Onda.
+/* Configuração local do Onda (este ficheiro está no .gitignore).
  *
- * Este arquivo guarda a chave da API e NÃO deve ser versionado
- * (ele está listado no .gitignore). Para publicar o site, faça a
- * chamada da API por um backend em vez de expor a chave no navegador.
+ * youtubeApiKey  -> YouTube Data API v3 (busca de vídeos)
+ * firebaseConfig -> Firebase > Configurações do projeto > Seus apps (Web)
+ *
+ * Enquanto apiKey/appId estiverem vazios, o app usa a base de dados local
+ * (IndexedDB) e não tenta ligar à nuvem.
  */
 window.ONDA_CONFIG = {
-  // YouTube Data API v3 — ative em https://console.cloud.google.com/
-  // e restrinja a chave por "HTTP referrers" ao domínio onde o app roda.
-  youtubeApiKey: 'AIzaSyBQa14_qWEIKK8i6MXG34T7tldSHURa5MM'
+  youtubeApiKey: '',
+
+  firebaseConfig: {
+    apiKey: 'AIzaSyDC1iNXWzn0HtxC-7NHHnhVklmlhc9B6RQ',
+    authDomain: 'spotify-copia-3809d.firebaseapp.com',
+    projectId: 'spotify-copia-3809d',
+    storageBucket: 'spotify-copia-3809d.firebasestorage.app',
+    messagingSenderId: '382769400696',
+    appId: '1:382769400696:web:76f7e909a63f2b91c4568d',
+    measurementId: 'G-84FBZGM3XV'
+  }
 };
