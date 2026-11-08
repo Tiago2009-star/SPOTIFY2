@@ -15,6 +15,93 @@
   --tabbar-h: 0px;
 }
 
+/* ---------- conta obrigatória ---------- */
+.auth {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: radial-gradient(circle at 50% 0%, rgba(30, 215, 96, .22), rgba(0, 0, 0, .96) 60%), #000;
+  overflow: auto;
+}
+
+.auth.open { display: flex; }
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 26px 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
+}
+
+.auth-brand {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--green);
+  margin-bottom: 14px;
+}
+
+.auth-title { margin: 0 0 8px; font-size: 24px; line-height: 1.2; }
+
+.auth-sub { margin: 0 0 18px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+.auth-form { display: grid; gap: 14px; }
+
+.auth-label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+
+.auth-label input {
+  background: #000;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.auth-label input:focus { outline: 2px solid var(--green); outline-offset: 1px; border-color: var(--green); }
+
+.auth-error { min-height: 18px; color: #ff6b6b; font-size: 13px; }
+
+.auth-submit {
+  background: var(--green);
+  color: #000;
+  border: 0;
+  border-radius: 999px;
+  padding: 13px 18px;
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.auth-submit:disabled { opacity: .6; cursor: default; }
+
+.auth-switch {
+  margin-top: 14px;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.auth-switch:hover { color: var(--text); }
+
+.auth-accounts { margin: 14px 0 0; color: #6f6f6f; font-size: 12px; }
+
+body.locked { overflow: hidden; }
+
+/* o player do YouTube roda fora da tela: nunca deve receber toques */
+.yt-engine { pointer-events: none; }
+.yt-engine iframe { pointer-events: none; }
+
 *,
 *::before,
 *::after { box-sizing: border-box; }

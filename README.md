@@ -5,9 +5,10 @@ App estático (HTML + CSS + JS, sem build e sem dependências) com:
 - **Tocar ao clicar** em qualquer música (fila automática: próxima/anterior)
 - **Playlists**: criar, adicionar/remover músicas, excluir
 - **Favoritos** (“Músicas Curtidas”), com o coração em cada faixa e no player
-- **Busca** por música, artista ou álbum
+- **Busca** por música, artista ou álbum (biblioteca + YouTube)
 - **Player completo**: play/pause, progresso, volume, aleatório, repetir (playlist / uma música)
-- **Persistência** em `localStorage` (favoritos, playlists, volume, recentes)
+- **Conta obrigatória**: para ouvir música é preciso criar conta (nome + palavra-passe); cada conta tem a sua biblioteca
+- **Persistência** em `localStorage`, por conta (favoritos, playlists, histórico, buscas, volume)
 - Layout responsivo (desktop e celular)
 
 ## Como rodar
@@ -69,7 +70,8 @@ servindo de base para isso.
 index.html      estrutura da tela
 styles.css      tema escuro e layout
 js/catalog.js   catálogo (álbuns e faixas)
-js/app.js       player, views, playlists, favoritos, persistência
+js/config.js    chave da YouTube Data API (ignorado pelo git)
+js/app.js       player, views, playlists, favoritos, contas, persistência
 ```
 
 ## Músicas do computador
@@ -85,15 +87,23 @@ músicas tocam só naquela sessão — abrir por `http://localhost` costuma reso
 
 ## YouTube
 
-O app **não usa mais** o YouTube: a busca filtra só o catálogo e os arquivos
-locais, e nada abre o YouTube no navegador nem no telemóvel. O player
-incorporado também saiu — era ele que, no telemóvel, mostrava a interface do
-YouTube e mandava para o app deles.
+A **busca** consulta a YouTube Data API v3 sozinha, ~0,8 s depois da última
+tecla, e mostra os vídeos no topo dos resultados. A chave fica em `js/config.js`
+(ignorado pelo git):
 
-Todas as faixas tocam no player do próprio app, pelo elemento `<audio>`, com a
-capa e os controlos dentro do Onda. Se quiser suas músicas, importe os arquivos
-em “Minhas músicas” ou coloque os `.mp3` em `musicas/` e aponte o `src` no
-`js/catalog.js`.
+```js
+window.ONDA_CONFIG = { youtubeApiKey: 'SUA_CHAVE' };
+```
+
+O vídeo toca no player incorporado, **fora da tela** (`#yt-stage`), com
+`controls: 0`, `fs: 0`, `playsinline: 1` e `pointer-events: none`. O app mostra
+apenas a capa, o título e o autor no painel “a tocar” — não existe nenhum link
+ou botão “Abrir no YouTube”, nem interface do YouTube para tocar.
+
+Ainda assim, quem manda no player é o YouTube: em alguns telemóveis o
+carregamento do vídeo pode abrir a app do YouTube, e **o áudio do YouTube não
+continua com o ecrã desligado**. Para ouvir em segundo plano, importe o áudio
+como arquivo em “Minhas músicas” (ou aponte o `src` no `js/catalog.js`).
 
 ## Escrã desligado e segundo plano
 
@@ -106,3 +116,19 @@ só param quando o app/browser é fechado por completo.
 Se a música ficar **muito tempo pausada**, ao voltar basta tocar em play: o app
 recarrega o áudio do ponto onde parou e continua (o browser pode descartar o
 buffer enquanto o telemóvel está bloqueado).
+
+## Contas
+
+O app **exige login para tocar música**. A conta é nome + palavra-passe e fica
+só neste navegador, com a palavra-passe protegida por *hash* com *salt* (não há
+servidor, nada é enviado para fora).
+
+Cada conta tem a sua própria biblioteca — curtidas, playlists, histórico, buscas
+recentes e volume — e ela continua guardada quando se sai e se entra de novo. A
+primeira conta criada herda a biblioteca que já existia no navegador. O botão
+“Sair da conta” fica em **Perfil**.
+
+Limitações: a conta **não sincroniza entre aparelhos** (para isso seria preciso
+um serviço de autenticação e base de dados) e os arquivos importados em “Minhas
+músicas” ficam no IndexedDB deste aparelho. Limpar os dados do site apaga contas
+e bibliotecas.

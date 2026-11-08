@@ -93,15 +93,66 @@
     prefs: { volume: 0.8, shuffle: false, repeat: 'off' }
   };
 
+  /* ----------------------------- contas ----------------------------- */
+  /* Conta obrigatória: cada conta tem a sua biblioteca (curtidas, playlists,
+     histórico, buscas e volume) guardada neste navegador. A sessão fica aberta
+     até o utilizador sair. */
+  const ACCOUNTS_KEY = 'onda.contas.v1';
+  let storeKey = STORAGE_KEY;
+  let authMode = 'login';
+
+  const contas = { users: [], currentId: '' };
+
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
+    const rawAccounts = localStorage.getItem(ACCOUNTS_KEY);
+    if (rawAccounts) {
+      const saved = JSON.parse(rawAccounts);
+      if (saved && Array.isArray(saved.users)) {
+        contas.users = saved.users.filter(u => u && u.id && u.name && u.hash);
+      }
+      if (saved && typeof saved.currentId === 'string') contas.currentId = saved.currentId;
+    }
+  } catch (err) {
+    /* localStorage indisponível (modo privado ou file:// bloqueado) */
+  }
+
+  if (!contas.users.some(u => u.id === contas.currentId)) contas.currentId = '';
+
+  function saveAccounts() {
+    try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(contas)); } catch (err) {}
+  }
+
+  function currentAccount() {
+    return contas.users.find(u => u.id === contas.currentId) || null;
+  }
+
+  function isLoggedIn() {
+    return !!currentAccount();
+  }
+
+  function keyForAccount(id) {
+    return 'onda.player.v2:' + id;
+  }
+
+  function resetStore() {
+    store.likes = [];
+    store.playlists = [];
+    store.recent = [];
+    store.ytTracks = [];
+    store.searches = [];
+    store.prefs = { volume: 0.8, shuffle: false, repeat: 'off' };
+  }
+
+  function applySaved(raw) {
+    if (!raw) return;
+    try {
       const saved = JSON.parse(raw);
-      if (Array.isArray(saved.likes)) store.likes = saved.likes;
+      if (!saved || typeof saved !== 'object') return;
+      if (Array.isArray(saved.likes)) store.likes = saved.likes.filter(id => typeof id === 'string');
       if (Array.isArray(saved.playlists)) {
         store.playlists = saved.playlists.filter(p => p && p.id && Array.isArray(p.tracks));
       }
-      if (Array.isArray(saved.recent)) store.recent = saved.recent;
+      if (Array.isArray(saved.recent)) store.recent = saved.recent.filter(id => typeof id === 'string');
       if (Array.isArray(saved.ytTracks)) store.ytTracks = saved.ytTracks;
       if (Array.isArray(saved.searches)) {
         store.searches = saved.searches.filter(s => typeof s === 'string' && s.trim()).slice(0, 8);
@@ -111,9 +162,264 @@
         if (typeof saved.prefs.shuffle === 'boolean') store.prefs.shuffle = saved.prefs.shuffle;
         if (typeof saved.prefs.repeat === 'string') store.prefs.repeat = saved.prefs.repeat;
       }
+    } catch (err) {}
+  }
+
+  /* tira da biblioteca os vídeos que pertenciam à conta anterior */
+  function clearYtTracks() {
+    while (ytTracks.length) {
+      const track = ytTracks.pop();
+      if (track && trackById.has(track.id)) trackById.delete(track.id);
     }
-  } catch (err) {
-    /* localStorage indisponível (modo privado ou file:// bloqueado) */
+  }
+
+  /* carrega a biblioteca da conta activa (ou limpa tudo quando não há conta) */
+  function loadStoreFor(accountId) {
+    resetStore();
+    storeKey = accountId ? keyForAccount(accountId) : STORAGE_KEY;
+    try { applySaved(localStorage.getItem(storeKey)); } catch (err) {}
+
+    /* vídeos que esta conta salvou em favoritos/playlists voltam aqui */
+    clearYtTracks();
+    store.ytTracks.forEach(record => registerYtTrack(record));
+
+    likedSet.clear();
+    store.likes.forEach(id => likedSet.add(id));
+
+    player.shuffle = !!store.prefs.shuffle;
+    player.repeat = store.prefs.repeat === 'all' || store.prefs.repeat === 'one' ? store.prefs.repeat : 'off';
+  }
+
+  /* a biblioteca que existia antes das contas passa para a primeira conta criada */
+  function claimLegacyLibrary(accountId) {
+    try {
+      const legacy = localStorage.getItem(STORAGE_KEY);
+      const target = keyForAccount(accountId);
+      if (!legacy || localStorage.getItem(target)) return;
+      localStorage.setItem(target, legacy);
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (err) {}
+  }
+
+  function randomSalt() {
+    const bytes = new Uint8Array(16);
+    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function simpleHash(text) {
+    let h1 = 0x811c9dc5;
+    let h2 = 0x1000193;
+    for (let i = 0; i < text.length; i += 1) {
+      const c = text.charCodeAt(i);
+      h1 = ((h1 ^ c) * 0x01000193) >>> 0;
+      h2 = (h2 + c * (i + 1)) >>> 0;
+    }
+    return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
+  }
+
+  /* devolve [hash_forte, hash_simples] para a mesma palavra-passe */
+  function hashVariants(password, salt) {
+    const text = salt + ':' + String(password);
+    const weak = 'local:' + simpleHash(text);
+    const strong = (window.crypto && window.crypto.subtle && window.TextEncoder)
+      ? window.crypto.subtle.digest('SHA-256', new window.TextEncoder().encode(text))
+          .then(buffer => 'sha256:' + Array.from(new Uint8Array(buffer))
+            .map(b => b.toString(16).padStart(2, '0')).join(''))
+          .catch(() => weak)
+      : Promise.resolve(weak);
+    return strong.then(value => [value, weak]);
+  }
+
+  function requireAccount() {
+    if (isLoggedIn()) return true;
+    showAuth('login');
+    toast('Crie uma conta para ouvir música');
+    return false;
+  }
+
+  function afterLogin() {
+    player.queue = [];
+    player.pos = -1;
+    player.currentId = null;
+    audio.pause();
+    try {
+      audio.removeAttribute('src');
+      audio.load();
+    } catch (err) {}
+
+    setVolume(clamp(typeof store.prefs.volume === 'number' ? store.prefs.volume : 0.8, 0, 1), false);
+    hideAuth();
+    render();
+    updatePlayerBar();
+  }
+
+  function createAccount(name, password) {
+    return new Promise((resolve, reject) => {
+      const clean = String(name || '').trim();
+      const pass = String(password || '');
+
+      if (clean.length < 2) { reject(new Error('Escolha um nome com pelo menos 2 letras.')); return; }
+      if (pass.length < 4) { reject(new Error('A palavra-passe precisa de 4 caracteres ou mais.')); return; }
+      if (contas.users.some(u => norm(u.name) === norm(clean))) {
+        reject(new Error('Já existe uma conta com esse nome neste aparelho.'));
+        return;
+      }
+
+      const salt = randomSalt();
+      const id = 'u' + Date.now().toString(36) + Math.floor(Math.random() * 9999).toString(36);
+
+      hashVariants(pass, salt).then(variants => {
+        contas.users.push({ id: id, name: clean, salt: salt, hash: variants[0], createdAt: Date.now() });
+        contas.currentId = id;
+        claimLegacyLibrary(id);
+        saveAccounts();
+        loadStoreFor(id);
+        resolve(currentAccount());
+      }).catch(reject);
+    });
+  }
+
+  function loginAccount(name, password) {
+    return new Promise((resolve, reject) => {
+      const user = contas.users.find(u => norm(u.name) === norm(String(name || '').trim()));
+      if (!user) { reject(new Error('Conta não encontrada. Crie uma conta nova.')); return; }
+
+      hashVariants(password, user.salt).then(variants => {
+        if (variants.indexOf(user.hash) === -1) {
+          reject(new Error('Palavra-passe errada.'));
+          return;
+        }
+        contas.currentId = user.id;
+        saveAccounts();
+        loadStoreFor(user.id);
+        resolve(user);
+      }).catch(reject);
+    });
+  }
+
+  function logoutAccount() {
+    contas.currentId = '';
+    saveAccounts();
+
+    player.currentId = null;
+    player.queue = [];
+    player.pos = -1;
+    audio.pause();
+    try {
+      audio.removeAttribute('src');
+      audio.load();
+    } catch (err) {}
+
+    resetStore();
+    clearYtTracks();
+    likedSet.clear();
+    storeKey = STORAGE_KEY;
+
+    closeNowPlaying();
+    render();
+    updatePlayerBar();
+    showAuth('login');
+    toast('Sessão terminada');
+  }
+
+  function authHTML() {
+    const creating = authMode === 'create';
+    const known = contas.users.map(u => esc(u.name)).join(', ');
+
+    return '<div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">' +
+      '<div class="auth-brand">Onda</div>' +
+      '<h1 class="auth-title" id="auth-title">' + (creating ? 'Crie a sua conta' : 'Entre na sua conta') + '</h1>' +
+      '<p class="auth-sub">' + (creating
+        ? 'É obrigatório ter conta para ouvir música. Curtidas, playlists e histórico ficam guardados na conta.'
+        : 'Entre para ouvir música e recuperar a sua biblioteca.') + '</p>' +
+      '<form class="auth-form" id="auth-form">' +
+        '<label class="auth-label">Nome' +
+          '<input id="auth-name" type="text" autocomplete="username" required minlength="2" placeholder="O seu nome">' +
+        '</label>' +
+        '<label class="auth-label">Palavra-passe' +
+          '<input id="auth-pass" type="password" autocomplete="' + (creating ? 'new-password' : 'current-password') +
+            '" required minlength="4" placeholder="Mínimo 4 caracteres">' +
+        '</label>' +
+        (creating
+          ? '<label class="auth-label">Repetir palavra-passe' +
+              '<input id="auth-pass2" type="password" autocomplete="new-password" required minlength="4" ' +
+                'placeholder="Repita a palavra-passe">' +
+            '</label>'
+          : '') +
+        '<div class="auth-error" id="auth-error" role="alert"></div>' +
+        '<button class="auth-submit" id="auth-submit" type="submit">' +
+          (creating ? 'Criar conta e ouvir' : 'Entrar e ouvir') +
+        '</button>' +
+      '</form>' +
+      '<button class="auth-switch" type="button" data-auth-switch="' + (creating ? 'login' : 'create') + '">' +
+        (creating ? 'Já tenho conta — entrar' : 'Ainda não tenho conta — criar') +
+      '</button>' +
+      (known ? '<p class="auth-accounts">Contas neste aparelho: ' + known + '</p>' : '') +
+    '</div>';
+  }
+
+  function showAuth(mode) {
+    authMode = mode === 'create' ? 'create' : 'login';
+    let el = document.getElementById('auth');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'auth';
+      el.className = 'auth';
+      document.body.appendChild(el);
+    }
+    el.innerHTML = authHTML();
+    el.classList.add('open');
+    document.body.classList.add('locked');
+
+    const input = el.querySelector('#auth-name');
+    if (input) setTimeout(() => { try { input.focus(); } catch (err) {} }, 60);
+  }
+
+  function hideAuth() {
+    const el = document.getElementById('auth');
+    if (el) {
+      el.classList.remove('open');
+      el.innerHTML = '';
+    }
+    document.body.classList.remove('locked');
+  }
+
+  function submitAuth() {
+    const el = document.getElementById('auth');
+    if (!el) return;
+
+    const nameEl = el.querySelector('#auth-name');
+    const passEl = el.querySelector('#auth-pass');
+    const pass2El = el.querySelector('#auth-pass2');
+    const errorEl = el.querySelector('#auth-error');
+    const button = el.querySelector('#auth-submit');
+    const creating = authMode === 'create';
+    const name = nameEl ? nameEl.value : '';
+    const pass = passEl ? passEl.value : '';
+
+    if (errorEl) errorEl.textContent = '';
+    if (creating && pass2El && pass2El.value !== pass) {
+      if (errorEl) errorEl.textContent = 'As palavras-passe não coincidem.';
+      return;
+    }
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Aguarde…';
+    }
+
+    const action = creating ? createAccount(name, pass) : loginAccount(name, pass);
+    action.then(() => {
+      afterLogin();
+      toast(creating ? 'Conta criada. Boas músicas!' : 'Bem-vindo de volta!');
+    }).catch(err => {
+      if (button) {
+        button.disabled = false;
+        button.textContent = creating ? 'Criar conta e ouvir' : 'Entrar e ouvir';
+      }
+      if (errorEl) errorEl.textContent = (err && err.message) || 'Não foi possível continuar.';
+    });
   }
 
   const likedSet = new Set(store.likes);
@@ -154,10 +460,11 @@
   const ytApiQueue = [];
 
   const save = () => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); } catch (err) {}
+    if (!isLoggedIn()) return;
+    try { localStorage.setItem(storeKey, JSON.stringify(store)); } catch (err) {}
   };
 
-  /* a biblioteca do Onda é o catálogo e os arquivos locais: nada de YouTube */
+  /* catálogo, arquivos locais e os vídeos salvos na conta */
 
   /* --------------------------- utilitários --------------------------- */
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -480,9 +787,9 @@
       albumSection +
       localSection +
       savedSection +
-      '<div class="note"><strong>Músicas:</strong> toque numa música para ouvir no player da app — a capa e os ' +
-        'controlos aparecem na barra de baixo e no painel “a tocar”, e o áudio continua com o ecrã desligado ou ' +
-        'a app em segundo plano. Adicione os arquivos do seu computador em “Minhas músicas”.</div>';
+      '<div class="note"><strong>Músicas:</strong> pesquise na barra acima — os resultados do YouTube aparecem ' +
+        'sozinhos. Toque num resultado e ele toca no player do app, com capa e controlos na barra de baixo e no ' +
+        'painel “a tocar”. Arquivos do seu computador entram em “Minhas músicas”.</div>';
   }
 
   function albumHTML(id) {
@@ -547,7 +854,7 @@
     if (!term) {
       const saved = allIds();
       return '<div class="view-body search-body"><h1 class="page-title">Buscar</h1>' +
-        '<p class="page-sub">Escreva o nome de uma música, artista ou álbum para filtrar a sua biblioteca.</p>' +
+        '<p class="page-sub">Escreva o nome de uma música, artista ou álbum — os resultados do YouTube aparecem sozinhos.</p>' +
         (saved.length ? subSection('Músicas salvas', trackListHTML(saved)) : '') +
         '<div class="note"><strong>Histórico:</strong> fica na própria barra de pesquisa — clique nela para ver as ' +
           'músicas tocadas e as buscas recentes, e escreva para filtrar.</div>' +
@@ -589,8 +896,9 @@
     }
 
     return '<div class="view-body search-body"><h1 class="page-title">Resultados para “' + esc(q) + '”</h1>' +
-      (blocks.length ? blocks.join('') : '<div class="empty">Nada encontrado na sua biblioteca.</div>') +
-      '</div>';
+      '<div id="yt-player-slot"></div>' +
+      '<div id="yt-panel">' + ytPanelHTML(q) + '</div>' +
+      blocks.join('') + '</div>';
   }
 
   /* ---------------------------- youtube ---------------------------- */
@@ -821,7 +1129,18 @@
 
       yt.player = new window.YT.Player(target, {
         videoId: videoId,
-        playerVars: { autoplay: 1, rel: 0, playsinline: 1, modestbranding: 1 },
+        /* controls/fs desligados: nada de interface do YouTube para tocar e
+           nenhuma hipótese de abrir o YouTube por um toque no vídeo */
+        playerVars: {
+          autoplay: 1,
+          rel: 0,
+          playsinline: 1,
+          modestbranding: 1,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          origin: window.location.origin
+        },
         events: { onReady: onYtReady, onStateChange: onYtState }
       });
     });
@@ -1158,30 +1477,34 @@
 
   function profileHTML() {
     const stat = (value, label) => '<div class="stat"><strong>' + value + '</strong><span>' + esc(label) + '</span></div>';
+    const account = currentAccount();
+    const nome = account ? account.name : 'Sem conta';
     const playlists = store.playlists.length;
     const locals = localTracks.length;
-    const savedYt = ytTracks.length;
+    const likes = likedTrackIds().length;
 
     return heroHTML({
       colors: PROFILE_COLORS,
       coverTitle: 'Perfil',
       coverIcon: ICONS.user,
       type: 'Sua conta',
-      title: 'Perfil',
-      subtitle: 'Favoritos e playlists guardados neste navegador',
+      title: nome,
+      subtitle: 'Sua biblioteca fica guardada nesta conta',
       actions:
         '<button class="btn" data-act="create-playlist">' + ICONS.plus + '<span>Nova playlist</span></button>' +
-        '<button class="btn" data-act="add-files">' + ICONS.upload + '<span>Adicionar músicas</span></button>',
+        '<button class="btn" data-act="add-files">' + ICONS.upload + '<span>Adicionar músicas</span></button>' +
+        '<button class="btn" data-act="logout">' + ICONS.close + '<span>Sair da conta</span></button>',
       body:
         '<div class="stats">' +
-          stat(likedTrackIds().length, likedTrackIds().length === 1 ? 'música curtida' : 'músicas curtidas') +
+          stat(likes, likes === 1 ? 'música curtida' : 'músicas curtidas') +
           stat(playlists, playlists === 1 ? 'playlist' : 'playlists') +
+          stat(store.recent.length, 'no histórico') +
           stat(locals, locals === 1 ? 'arquivo local' : 'arquivos locais') +
-          stat(savedYt, savedYt === 1 ? 'vídeo do YouTube' : 'vídeos do YouTube') +
         '</div>' +
-        '<div class="note"><strong>Onde ficam seus dados:</strong> curtidas, playlists, arquivos importados e vídeos salvos ' +
-          'ficam no armazenamento deste navegador. Limpar os dados do site apaga tudo — use “Adicionar músicas” ' +
-          'para importar de novo.</div>'
+        '<div class="note"><strong>Sua conta “' + esc(nome) + '”:</strong> curtidas, playlists, histórico, buscas e ' +
+          'volume ficam guardados nela. Ao sair, a biblioteca continua guardada e volta quando entrar de novo. ' +
+          'A conta é local a este navegador — noutro aparelho, crie a conta de novo (os arquivos importados ficam ' +
+          'só neste aparelho).</div>'
     });
   }
 
@@ -1954,6 +2277,7 @@
   }
 
   function play(id, list, kind) {
+    if (!requireAccount()) return;
     if (!id || !trackById.has(id)) return;
     if (player.currentId === id && (yt.playing || audio.src)) {
       togglePlay();
@@ -1974,6 +2298,7 @@
   }
 
   function playAll(ids, kind, label) {
+    if (!requireAccount()) return;
     const list = (ids || []).filter(id => trackById.has(id));
     if (!list.length) {
       toast('Nada para tocar ainda.');
@@ -1987,6 +2312,7 @@
   }
 
   function togglePlay() {
+    if (!requireAccount()) return;
     if (yt.playing) {
       if (!yt.player || !yt.ready) return;
       try {
@@ -2009,6 +2335,7 @@
   }
 
   function nextTrack(auto) {
+    if (!isLoggedIn()) return;
     if (!player.queue.length) return;
     if (auto && player.repeat === 'one') {
       if (yt.playing) {
@@ -2306,6 +2633,7 @@
       route = { name: 'search', q: term };
       mainEl.scrollTop = 0;
       render();
+      searchYouTube(term);
       return;
     }
 
@@ -2382,6 +2710,10 @@
         openCreatePlaylist([]);
         return;
       }
+      if (action === 'logout') {
+        logoutAccount();
+        return;
+      }
       return;
     }
 
@@ -2423,6 +2755,7 @@
       stopYouTubeSearch();
       route = { name: 'search', q: q };
       render();
+      searchYouTube(q);
     });
 
     navHomeBtn.addEventListener('click', () => {
@@ -2466,6 +2799,11 @@
       mainEl.scrollTop = 0;
       stopYouTubeSearch();
       render();
+      if (!q) return;
+      ytTimer = setTimeout(() => {
+        ytTimer = 0;
+        searchYouTube(q);
+      }, 800);
     });
 
     sidebarEl.addEventListener('click', event => {
@@ -2560,6 +2898,7 @@
           stack.length = 0;
           mainEl.scrollTop = 0;
           render();
+          searchYouTube(term);
           searchInput.blur();
           return;
         }
@@ -2749,6 +3088,18 @@
       }
     });
 
+    /* portão de conta: entrar / criar conta */
+    document.addEventListener('submit', event => {
+      if (!event.target || event.target.id !== 'auth-form') return;
+      event.preventDefault();
+      submitAuth();
+    });
+
+    document.addEventListener('click', event => {
+      const sw = event.target.closest('[data-auth-switch]');
+      if (sw) showAuth(sw.getAttribute('data-auth-switch'));
+    });
+
     window.addEventListener('resize', closeMenu);
     mainEl.addEventListener('scroll', () => {
       if (menuEl.classList.contains('open')) closeMenu();
@@ -2762,6 +3113,9 @@
       if (ICONS[key]) el.innerHTML = ICONS[key];
     });
 
+    /* a biblioteca pertence à conta: carrega a de quem está ligado */
+    if (contas.currentId) loadStoreFor(contas.currentId);
+
     /* o <audio> tem de estar dentro do documento para o telemóvel continuar a
        tocar quando o ecrã desliga ou o app passa para segundo plano */
     if (!audio.isConnected) document.body.appendChild(audio);
@@ -2771,6 +3125,9 @@
 
     wireEvents();
     render();
+
+    /* conta obrigatória: sem login o app fica atrás do portão */
+    if (!isLoggedIn()) showAuth('login');
 
     localStore('readonly', objectStore => objectStore.getAll())
       .then(records => {
