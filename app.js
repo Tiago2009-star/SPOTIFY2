@@ -2153,10 +2153,7 @@
           stat(playlists, playlists === 1 ? 'playlist' : 'playlists') +
           stat(store.recent.length, 'no histórico') +
           stat(locals, locals === 1 ? 'arquivo local' : 'arquivos locais') +
-        '</div>' +
-        '<div class="note"><strong>Conta “' + esc(nome) + '”:</strong> curtidas, playlists (com as músicas de ' +
-          'cada uma), histórico, buscas e volume ficam guardados na base de dados do app. Ao sair, a biblioteca ' +
-          'continua guardada e volta quando entrar de novo.</div>'
+        '</div>'
     });
   }
 
