@@ -111,7 +111,8 @@
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     volume: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-    volumeOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+    volumeOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>'
   };
 
   /* ---------------------------- estado ---------------------------- */
@@ -388,23 +389,30 @@
     updatePlayerBar();
   }
 
-  function createAccount(name, password) {
+  function createAccount(name, email, password) {
     return new Promise((resolve, reject) => {
       const clean = String(name || '').trim();
+      const mail = String(email || '').trim();
       const pass = String(password || '');
 
-      if (clean.length < 2) { reject(new Error('Escolha um nome com pelo menos 2 letras.')); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) {
+        reject(new Error('Escreva um email válido (ex.: nome@gmail.com).'));
+        return;
+      }
       if (pass.length < 4) { reject(new Error('A palavra-passe precisa de 4 caracteres ou mais.')); return; }
-      if (contas.users.some(u => norm(u.name) === norm(clean))) {
-        reject(new Error('Já existe uma conta com esse nome neste aparelho.'));
+      if (contas.users.some(u => u.email && norm(u.email) === norm(mail))) {
+        reject(new Error('Já existe uma conta com esse email neste aparelho.'));
         return;
       }
 
+      const display = clean || mail.split('@')[0];
       const salt = randomSalt();
       const id = 'u' + Date.now().toString(36) + Math.floor(Math.random() * 9999).toString(36);
 
       hashVariants(pass, salt).then(variants => {
-        contas.users.push({ id: id, name: clean, salt: salt, hash: variants[0], createdAt: Date.now() });
+        contas.users.push({
+          id: id, name: display, email: mail, salt: salt, hash: variants[0], createdAt: Date.now()
+        });
         contas.currentId = id;
         claimLegacyLibrary(id);
         saveAccounts();
@@ -414,10 +422,15 @@
     });
   }
 
-  function loginAccount(name, password) {
+  function loginAccount(login, password) {
     return new Promise((resolve, reject) => {
-      const user = contas.users.find(u => norm(u.name) === norm(String(name || '').trim()));
-      if (!user) { reject(new Error('Conta não encontrada. Crie uma conta nova.')); return; }
+      const typed = String(login || '').trim();
+      const user = contas.users.find(u => (u.email && norm(u.email) === norm(typed)) || norm(u.name) === norm(typed));
+      if (!user) {
+        reject(new Error('Conta não encontrada neste aparelho. Se já tem conta noutro aparelho, use ' +
+          '“Tenho conta noutro aparelho — transferir”.'));
+        return;
+      }
 
       hashVariants(password, user.salt).then(variants => {
         if (variants.indexOf(user.hash) === -1) {
@@ -429,6 +442,110 @@
         loadStoreFor(user.id);
         resolve(user);
       }).catch(reject);
+    });
+  }
+
+  /* ------------- levar a conta para outro aparelho (sem nuvem) -------------
+     As contas locais vivem no armazenamento do navegador de cada aparelho e
+     nunca passam sozinhas para outro. O código abaixo leva a conta (email,
+     sal e palavra-passe) e a biblioteca inteira como texto. */
+  function encodeTransfer(user, data) {
+    const payload = { v: 1, user: user, store: data || {} };
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+    return 'ONDA1.' + btoa(bin);
+  }
+
+  function decodeTransfer(code) {
+    const clean = String(code || '').replace(/\s+/g, '');
+    const body = clean.indexOf('ONDA1.') === 0 ? clean.slice(6) : clean;
+    if (!body) throw new Error('Cole o código de transferência do outro aparelho.');
+
+    let bin;
+    try { bin = atob(body); } catch (err) { throw new Error('Código inválido ou incompleto. Copie-o outra vez.'); }
+
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+
+    let data;
+    try { data = JSON.parse(new TextDecoder().decode(bytes)); } catch (err) {
+      throw new Error('Código inválido ou incompleto. Copie-o outra vez.');
+    }
+    if (!data || !data.user || !data.user.id || !data.user.hash || !data.user.salt) {
+      throw new Error('Este código não é de uma conta do Onda.');
+    }
+    return data;
+  }
+
+  function mergeLibrary(target, incoming) {
+    if (!incoming || typeof incoming !== 'object') return;
+    let mine = {};
+    try {
+      const raw = localStorage.getItem(target);
+      if (raw) mine = JSON.parse(raw) || {};
+    } catch (err) {}
+
+    ['likes', 'playlists', 'recent', 'ytTracks', 'searches'].forEach(field => {
+      const add = incoming[field];
+      if (!Array.isArray(add)) return;
+      if (!Array.isArray(mine[field])) { mine[field] = add.slice(); return; }
+
+      const seen = new Set(mine[field].map(item => (
+        item && typeof item === 'object' ? (item.id || JSON.stringify(item)) : String(item)
+      )));
+      add.forEach(item => {
+        const key = item && typeof item === 'object' ? (item.id || JSON.stringify(item)) : String(item);
+        if (seen.has(key)) return;
+        mine[field].push(item);
+        seen.add(key);
+      });
+    });
+
+    if (incoming.prefs && typeof incoming.prefs === 'object') {
+      mine.prefs = Object.assign(
+        { volume: 0.8, shuffle: false, repeat: 'off' },
+        incoming.prefs,
+        mine.prefs && typeof mine.prefs === 'object' ? mine.prefs : {}
+      );
+    }
+
+    try { localStorage.setItem(target, JSON.stringify(mine)); } catch (err) {}
+  }
+
+  function importAccount(code) {
+    return new Promise((resolve, reject) => {
+      let data;
+      try { data = decodeTransfer(code); } catch (err) { reject(err); return; }
+
+      const incoming = data.user;
+      let user = contas.users.find(u => u.id === incoming.id) ||
+        contas.users.find(u => u.email && incoming.email && norm(u.email) === norm(incoming.email));
+
+      if (user) {
+        if (incoming.email) user.email = incoming.email;
+        if (incoming.name) user.name = incoming.name;
+        if (incoming.salt) user.salt = incoming.salt;
+        if (incoming.hash) user.hash = incoming.hash;
+        if (incoming.avatar) user.avatar = incoming.avatar;
+      } else {
+        user = {
+          id: incoming.id,
+          name: incoming.name || (incoming.email || 'Conta').split('@')[0],
+          email: incoming.email || '',
+          salt: incoming.salt,
+          hash: incoming.hash,
+          avatar: incoming.avatar || '',
+          createdAt: incoming.createdAt || Date.now()
+        };
+        contas.users.push(user);
+      }
+
+      contas.currentId = user.id;
+      mergeLibrary(keyForAccount(user.id), data.store);
+      saveAccounts();
+      loadStoreFor(user.id);
+      resolve(user);
     });
   }
 
@@ -461,8 +578,27 @@
 
   function authHTML() {
     const creating = authMode === 'create';
+    const transferring = authMode === 'transfer';
     const cloud = !!window.OndaCloud;
-    const known = cloud ? '' : contas.users.map(u => esc(u.name)).join(', ');
+    const known = cloud ? '' : contas.users.map(u => esc(u.email || u.name)).join(', ');
+
+    if (transferring) {
+      return '<div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">' +
+        '<div class="auth-brand">Onda</div>' +
+        '<h1 class="auth-title" id="auth-title">Transferir conta</h1>' +
+        '<p class="auth-sub">No aparelho onde a conta já funciona, abra <strong>Perfil → Transferir conta</strong>, ' +
+          'copie o código e cole-o aqui. Vem a conta, as curtidas, as playlists e o histórico.</p>' +
+        '<form class="auth-form" id="auth-import-form">' +
+          '<label class="auth-label">Código de transferência' +
+            '<textarea id="auth-code" class="auth-textarea" rows="5" spellcheck="false" ' +
+              'placeholder="Cole aqui o código que começa por ONDA1."></textarea>' +
+          '</label>' +
+          '<div class="auth-error" id="auth-error" role="alert"></div>' +
+          '<button class="auth-submit" id="auth-import" type="submit">Importar e entrar</button>' +
+        '</form>' +
+        '<button class="auth-switch" type="button" data-auth-switch="login">Voltar — entrar com email</button>' +
+      '</div>';
+    }
 
     return '<div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">' +
       '<div class="auth-brand">Onda</div>' +
@@ -473,17 +609,15 @@
             : 'É obrigatório ter conta para ouvir música. Curtidas, playlists e histórico ficam guardados na conta.')
         : 'Entre para ouvir música e recuperar a sua biblioteca.') + '</p>' +
       '<form class="auth-form" id="auth-form">' +
-        (cloud
-          ? '<label class="auth-label">Email' +
-              '<input id="auth-email" type="email" autocomplete="email" required placeholder="voce@email.com">' +
+        '<label class="auth-label">' + (cloud || creating ? 'Email' : 'Email ou nome') +
+          '<input id="auth-email" type="text" inputmode="email" autocomplete="email" required placeholder="' +
+            (cloud || creating ? 'voce@email.com' : 'voce@email.com ou o seu nome') + '">' +
+        '</label>' +
+        (creating
+          ? '<label class="auth-label">Nome' +
+              '<input id="auth-name" type="text" autocomplete="nickname" minlength="2" placeholder="O seu nome">' +
             '</label>'
           : '') +
-        (cloud && !creating
-          ? ''
-          : '<label class="auth-label">Nome' +
-              '<input id="auth-name" type="text" autocomplete="' + (cloud ? 'nickname' : 'username') +
-                '" required minlength="2" placeholder="O seu nome">' +
-            '</label>') +
         '<label class="auth-label">Palavra-passe' +
           '<input id="auth-pass" type="password" autocomplete="' + (creating ? 'new-password' : 'current-password') +
             '" required minlength="' + (cloud ? '6' : '4') + '" placeholder="' +
@@ -503,6 +637,10 @@
       '<button class="auth-switch" type="button" data-auth-switch="' + (creating ? 'login' : 'create') + '">' +
         (creating ? 'Já tenho conta — entrar' : 'Ainda não tenho conta — criar') +
       '</button>' +
+      (cloud ? '' :
+        '<button class="auth-switch" type="button" data-auth-switch="transfer">' +
+          'Tenho conta noutro aparelho — transferir' +
+        '</button>') +
       (cloud
         ? '<p class="auth-accounts">Conta na nuvem (Firebase): a mesma conta abre a biblioteca em qualquer aparelho.</p>'
         : (offlineMode()
@@ -524,7 +662,7 @@
   }
 
   function showAuth(mode) {
-    authMode = mode === 'create' ? 'create' : 'login';
+    authMode = mode === 'create' ? 'create' : (mode === 'transfer' ? 'transfer' : 'login');
     let el = document.getElementById('auth');
     if (!el) {
       el = document.createElement('div');
@@ -536,7 +674,7 @@
     el.classList.add('open');
     document.body.classList.add('locked');
 
-    const input = el.querySelector('#auth-name');
+    const input = el.querySelector('#auth-email') || el.querySelector('#auth-name') || el.querySelector('#auth-code');
     if (input) setTimeout(() => { try { input.focus(); } catch (err) {} }, 60);
   }
 
@@ -618,11 +756,37 @@
       return;
     }
 
-    const action = creating ? createAccount(name, pass) : loginAccount(name, pass);
+    const action = creating ? createAccount(name, email, pass) : loginAccount(email, pass);
     action.then(() => {
       afterLogin();
       toast(creating ? 'Conta criada. Boas músicas!' : 'Bem-vindo de volta!');
     }).catch(fail);
+  }
+
+  function submitImport() {
+    const el = document.getElementById('auth');
+    if (!el) return;
+
+    const codeEl = el.querySelector('#auth-code');
+    const errorEl = el.querySelector('#auth-error');
+    const button = el.querySelector('#auth-import');
+
+    if (errorEl) errorEl.textContent = '';
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'A importar…';
+    }
+
+    importAccount(codeEl ? codeEl.value : '').then(() => {
+      afterLogin();
+      toast('Conta e biblioteca transferidas. Boas músicas!');
+    }).catch(err => {
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Importar e entrar';
+      }
+      if (errorEl) errorEl.textContent = (err && err.message) || 'Não foi possível importar o código.';
+    });
   }
 
   const likedSet = new Set(store.likes);
@@ -1791,7 +1955,9 @@
         (avatar ? '<button class="btn" data-act="clear-avatar">' + ICONS.trash + '<span>Remover imagem</span></button>' : '') +
         '<button class="btn" data-act="create-playlist">' + ICONS.plus + '<span>Nova playlist</span></button>' +
         '<button class="btn" data-act="add-files">' + ICONS.upload + '<span>Adicionar músicas</span></button>' +
-        '<button class="btn" data-act="logout">' + ICONS.close + '<span>Sair da conta</span></button>',
+        (cloudUser ? '' : '<button class="btn" data-act="export-account">' + ICONS.phone +
+          '<span>Transferir conta</span></button>') +
+        '<button class="btn" data-act="logout">' + ICONS.close + '<span>Terminar sessão</span></button>',
       body:
         '<div class="stats">' +
           stat(likes, likes === 1 ? 'música curtida' : 'músicas curtidas') +
@@ -2367,6 +2533,8 @@
     const scrollTop = mainEl.scrollTop;
 
     renderSidebar();
+    const logoutBtn = document.getElementById('btn-logout');
+    if (logoutBtn) logoutBtn.hidden = !isLoggedIn();
     viewEl.innerHTML = viewHTML();
     mainEl.scrollTop = scrollTop;
     if (yt.playing) paintYtPlayer();
@@ -2839,6 +3007,50 @@
     modalState = null;
   }
 
+  function openExportAccount() {
+    const account = currentAccount();
+    if (!account) {
+      toast('Entre numa conta para a poder transferir');
+      return;
+    }
+
+    let code = '';
+    try { code = encodeTransfer(account, store); } catch (err) {
+      toast('Não foi possível gerar o código');
+      return;
+    }
+
+    modalState = { type: 'export' };
+    modalRoot.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-label="Transferir conta">' +
+      '<h2>Transferir conta para o telemóvel</h2>' +
+      '<p class="modal-note">Copie o código abaixo e envie-o para o telemóvel (WhatsApp, email ou notas). ' +
+        'No telemóvel, no ecrã de entrada, toque em <strong>Tenho conta noutro aparelho — transferir</strong> ' +
+        'e cole o código. Vem a conta, as curtidas, as playlists e o histórico.</p>' +
+      '<textarea class="field-input transfer-code" id="transfer-code" readonly rows="6" spellcheck="false">' +
+        esc(code) + '</textarea>' +
+      '<div class="modal-actions">' +
+        '<button class="btn" data-modal-close>Fechar</button>' +
+        '<button class="btn btn-primary" data-copy-code>Copiar código</button>' +
+      '</div>' +
+    '</div>';
+    modalRoot.classList.add('open');
+  }
+
+  function copyTransferCode() {
+    const area = document.getElementById('transfer-code');
+    if (!area) return;
+    area.focus();
+    area.select();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+        navigator.clipboard.writeText(area.value).catch(() => {});
+      } else if (document.execCommand) {
+        document.execCommand('copy');
+      }
+    } catch (err) {}
+    toast('Código copiado. Envie-o para o telemóvel.');
+  }
+
   function openCreatePlaylist(trackIds) {
     modalState = { type: 'create', tracks: trackIds || [] };
     modalRoot.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-label="Criar playlist">' +
@@ -3008,6 +3220,10 @@
         openCreatePlaylist([]);
         return;
       }
+      if (action === 'export-account') {
+        openExportAccount();
+        return;
+      }
       if (action === 'logout') {
         logoutAccount();
         return;
@@ -3113,6 +3329,10 @@
     });
 
     sidebarEl.addEventListener('click', event => {
+      if (event.target.closest('#btn-logout')) {
+        logoutAccount();
+        return;
+      }
       if (event.target.closest('[data-open-liked]')) {
         searchInput.value = '';
         navigate({ name: 'liked' });
@@ -3410,6 +3630,7 @@
     modalRoot.addEventListener('click', event => {
       if (event.target === modalRoot) { closeModal(); return; }
       if (event.target.closest('[data-modal-close]')) { closeModal(); return; }
+      if (event.target.closest('[data-copy-code]')) { copyTransferCode(); return; }
       if (event.target.closest('[data-create]')) { submitCreatePlaylist(); return; }
       const pick = event.target.closest('[data-pick]');
       if (pick && modalState && modalState.type === 'add') {
@@ -3450,9 +3671,16 @@
 
     /* portão de conta: entrar / criar conta */
     document.addEventListener('submit', event => {
-      if (!event.target || event.target.id !== 'auth-form') return;
-      event.preventDefault();
-      submitAuth();
+      if (!event.target) return;
+      if (event.target.id === 'auth-form') {
+        event.preventDefault();
+        submitAuth();
+        return;
+      }
+      if (event.target.id === 'auth-import-form') {
+        event.preventDefault();
+        submitImport();
+      }
     });
 
     document.addEventListener('click', event => {

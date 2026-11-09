@@ -68,6 +68,21 @@
 
 .auth-label input:focus { outline: 2px solid var(--green); outline-offset: 1px; border-color: var(--green); }
 
+.auth-label textarea {
+  background: #000;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  resize: vertical;
+  word-break: break-all;
+}
+
+.auth-label textarea:focus { outline: 2px solid var(--green); outline-offset: 1px; border-color: var(--green); }
+
 .auth-error { min-height: 18px; color: #ff6b6b; font-size: 13px; }
 
 .auth-submit {
@@ -231,6 +246,28 @@ input { font: inherit; }
 .lib-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .lib-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lib-sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- terminar sessão (sempre visível na barra lateral) ---------- */
+.sidebar-logout {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.sidebar-logout .ico { display: grid; place-items: center; width: 18px; height: 18px; flex: 0 0 auto; }
+.sidebar-logout .ico svg { width: 18px; height: 18px; }
+.sidebar-logout:hover { background: rgba(255, 255, 255, .08); color: #fff; border-color: rgba(255, 255, 255, .22); }
+.sidebar-logout[hidden] { display: none; }
+.sidebar-logout:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 
 /* ---------- main ---------- */
 .main {
@@ -1136,6 +1173,7 @@ input { font: inherit; }
 }
 .modal.modal-lg { width: min(560px, 100%); display: flex; flex-direction: column; overflow: hidden; }
 .modal h2 { margin: 0 0 16px; font-size: 20px; letter-spacing: -0.02em; }
+.modal-note { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
 .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .modal-head h2 { flex: 1; min-width: 0; }
 
@@ -1149,6 +1187,15 @@ input { font: inherit; }
   outline: none;
 }
 .field-input:focus { border-color: rgba(255, 255, 255, .45); }
+
+.transfer-code {
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  word-break: break-all;
+}
 
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .modal-actions .btn { padding: 10px 20px; }
