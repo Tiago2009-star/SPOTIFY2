@@ -68,6 +68,30 @@
 
 .auth-label input:focus { outline: 2px solid var(--green); outline-offset: 1px; border-color: var(--green); }
 
+/* campo da palavra-passe com o olho de mostrar/ocultar */
+.auth-pass { position: relative; display: block; }
+.auth-pass input { width: 100%; padding-right: 48px; }
+
+.auth-eye {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.auth-eye:hover { color: var(--text); background: rgba(255, 255, 255, .08); }
+.auth-eye:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+.auth-eye svg { width: 19px; height: 19px; }
+
 .auth-label textarea {
   background: #000;
   border: 1px solid #333;
@@ -364,6 +388,7 @@ input { font: inherit; }
 .view-header > * { position: relative; z-index: 1; }
 
 .vh-cover {
+  position: relative;
   width: 200px;
   height: 200px;
   border-radius: 8px;
@@ -371,6 +396,27 @@ input { font: inherit; }
   flex: 0 0 auto;
   box-shadow: 0 12px 40px rgba(0, 0, 0, .55);
 }
+
+/* círculo em cima da imagem de perfil: escolher/trocar a imagem */
+.avatar-edit {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, .85);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .62);
+  color: #fff;
+  cursor: pointer;
+  transition: background .15s ease, transform .15s ease;
+}
+.avatar-edit:hover { background: var(--green); color: #000; transform: scale(1.06); }
+.avatar-edit:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.avatar-edit svg { width: 21px; height: 21px; }
 .vh-meta { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .vh-type {
   font-size: 11px;

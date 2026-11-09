@@ -112,7 +112,10 @@
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     volume: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
     volumeOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
-    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>'
+    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>',
+    eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+    eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="m4 4 16 16"/></svg>',
+    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h2.4l1.5-2.3h8.2l1.5 2.3H20a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.8" r="3.6"/></svg>'
   };
 
   /* ---------------------------- estado ---------------------------- */
@@ -197,6 +200,42 @@
   /* conta na nuvem (Firebase) ou conta local (IndexedDB) */
   let cloudUser = null;
   let cloudSaveTimer = 0;
+  /* só grava na nuvem depois de a biblioteca ter sido lida: impede que um
+     arranque sem dados apague as playlists que já estão no Firebase */
+  let cloudLibReady = false;
+
+  function localCacheFor(uid) {
+    try {
+      const raw = localStorage.getItem('onda.cloud.v1:' + uid);
+      return raw ? JSON.parse(raw) : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function libHasContent(lib) {
+    return !!(lib && (
+      (Array.isArray(lib.playlists) && lib.playlists.length) ||
+      (Array.isArray(lib.likes) && lib.likes.length) ||
+      (Array.isArray(lib.recent) && lib.recent.length) ||
+      (Array.isArray(lib.searches) && lib.searches.length) ||
+      (Array.isArray(lib.ytTracks) && lib.ytTracks.length)
+    ));
+  }
+
+  /* aplica a biblioteca da nuvem; se ela vier vazia mas este aparelho ainda
+     tiver a cópia local da conta, recupera essa cópia e volta a enviá-la */
+  function useCloudLibrary(uid, lib) {
+    const cache = localCacheFor(uid);
+    if (!libHasContent(lib) && libHasContent(cache)) {
+      applyLibrary(cache);
+      cloudLibReady = true;
+      save();
+      return;
+    }
+    applyLibrary(lib);
+    cloudLibReady = true;
+  }
 
   function isLoggedIn() {
     /* com a nuvem ligada só conta a conta Firebase — é a única que existe
@@ -390,6 +429,7 @@
     hideAuth();
     render();
     updatePlayerBar();
+    restoreNowPlaying();
   }
 
   function createAccount(name, email, password) {
@@ -553,6 +593,8 @@
   }
 
   function logoutAccount() {
+    /* guarda o que estava a tocar para voltar a aparecer ao entrar de novo */
+    saveNowPlaying();
     if (window.OndaCloud && cloudUser) window.OndaCloud.signOutUser();
     cloudUser = null;
     contas.currentId = '';
@@ -603,14 +645,22 @@
             '</label>'
           : '') +
         '<label class="auth-label">Palavra-passe' +
-          '<input id="auth-pass" type="password" autocomplete="' + (creating ? 'new-password' : 'current-password') +
-            '" required minlength="' + (cloud ? '6' : '4') + '" placeholder="' +
-            (cloud ? 'Mínimo 6 caracteres' : 'Mínimo 4 caracteres') + '">' +
+          '<span class="auth-pass">' +
+            '<input id="auth-pass" type="password" autocomplete="' + (creating ? 'new-password' : 'current-password') +
+              '" required minlength="' + (cloud ? '6' : '4') + '" placeholder="' +
+              (cloud ? 'Mínimo 6 caracteres' : 'Mínimo 4 caracteres') + '">' +
+            '<button type="button" class="auth-eye" data-eye="auth-pass" aria-label="Mostrar palavra-passe" ' +
+              'title="Mostrar palavra-passe" aria-pressed="false">' + ICONS.eye + '</button>' +
+          '</span>' +
         '</label>' +
         (creating
           ? '<label class="auth-label">Repetir palavra-passe' +
-              '<input id="auth-pass2" type="password" autocomplete="new-password" required minlength="' +
-                (cloud ? '6' : '4') + '" placeholder="Repita a palavra-passe">' +
+              '<span class="auth-pass">' +
+                '<input id="auth-pass2" type="password" autocomplete="new-password" required minlength="' +
+                  (cloud ? '6' : '4') + '" placeholder="Repita a palavra-passe">' +
+                '<button type="button" class="auth-eye" data-eye="auth-pass2" aria-label="Mostrar palavra-passe" ' +
+                  'title="Mostrar palavra-passe" aria-pressed="false">' + ICONS.eye + '</button>' +
+              '</span>' +
             '</label>'
           : '') +
         '<div class="auth-error" id="auth-error" role="alert"></div>' +
@@ -820,7 +870,8 @@
     query: '', status: 'idle', results: [], error: '', playing: null,
     player: null, ready: false, state: -1, apiRequested: false,
     volume: typeof store.prefs.volume === 'number' ? clamp(store.prefs.volume, 0, 1) : 0.8,
-    muted: false
+    muted: false,
+    restore: null, restoring: false
   };
   let ytTimer = 0;
   let ytRequestId = 0;
@@ -829,6 +880,9 @@
 
   const save = () => {
     if (!isLoggedIn()) return;
+    /* ainda a ler a biblioteca da nuvem: não gravar nada (uma gravação com a
+       biblioteca vazia apagava as playlists que estão no Firebase) */
+    if (cloudUser && window.OndaCloud && !cloudLibReady) return;
     /* cópia rápida local, para a interface arrancar sem esperar pela rede */
     try { localStorage.setItem(storeKey, JSON.stringify(store)); } catch (err) {}
 
@@ -837,10 +891,124 @@
     if (cloudUser && window.OndaCloud) {
       clearTimeout(cloudSaveTimer);
       cloudSaveTimer = setTimeout(() => {
+        cloudSaveTimer = 0;
         window.OndaCloud.saveLibrary(cloudUser.id, store).catch(() => {});
       }, 700);
     }
   };
+
+  /* -------- faixa aberta: sobrevive a um recarregamento da página --------
+     Fica só neste aparelho (não vai para a nuvem): ao recarregar, a música
+     continua na barra, parada no mesmo segundo, e o play retoma dali em vez
+     de a barra aparecer vazia. */
+  function nowKey() {
+    if (cloudUser) return 'onda.now.v1:' + cloudUser.id;
+    if (contas.currentId) return 'onda.now.v1:' + contas.currentId;
+    return '';
+  }
+
+  function saveNowPlaying() {
+    const key = nowKey();
+    if (!key) return;
+
+    const track = player.currentId ? trackById.get(player.currentId) : null;
+    if (!track && !yt.playing) return;
+
+    let time = audio.currentTime || 0;
+    if (yt.playing) {
+      time = (yt.ready && yt.player && typeof yt.player.getCurrentTime === 'function')
+        ? Number(yt.player.getCurrentTime()) || 0
+        : (yt.lastTime || 0);
+    }
+
+    const state = {
+      v: 1,
+      currentId: track ? track.id : '',
+      yt: yt.playing
+        ? {
+            id: yt.playing.id,
+            title: yt.playing.title,
+            author: yt.playing.author,
+            trackId: yt.playing.trackId || ''
+          }
+        : null,
+      queue: player.queue.slice(0, 400),
+      pos: player.pos,
+      source: player.source,
+      time: Math.max(0, Number(time) || 0),
+      at: Date.now()
+    };
+
+    try { localStorage.setItem(key, JSON.stringify(state)); } catch (err) {}
+  }
+
+  function primeRestoredAudio(track, time) {
+    audio.pause();
+    audio.preload = 'metadata';
+    audio.src = track.src;
+
+    const seek = () => {
+      try {
+        const dur = Number.isFinite(audio.duration) ? audio.duration : time;
+        audio.currentTime = Math.min(Math.max(0, time), Math.max(0, dur - 0.2));
+      } catch (err) {}
+      updateProgress();
+      updatePlayerBar();
+    };
+
+    audio.addEventListener('loadedmetadata', seek, { once: true });
+    updatePlayerBar();
+  }
+
+  function restoreNowPlaying() {
+    if (!isLoggedIn()) return;
+    if (player.currentId || yt.playing) return;
+
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(nowKey()) || 'null'); } catch (err) { saved = null; }
+    if (!saved || (!saved.currentId && !saved.yt)) return;
+
+    const track = saved.currentId ? trackById.get(saved.currentId) : null;
+    const time = Math.max(0, Number(saved.time) || 0);
+
+    if (track) {
+      player.currentId = track.id;
+      player.source = saved.source || player.source;
+      player.queue = (Array.isArray(saved.queue) ? saved.queue : []).filter(id => trackById.has(id));
+      if (!player.queue.length) player.queue = [track.id];
+      const index = player.queue.indexOf(track.id);
+      player.pos = index === -1 ? 0 : index;
+
+      if (track.yt) {
+        yt.restoring = true;
+        yt.restore = { time: time };
+        yt.playing = { id: track.videoId, title: track.title, author: track.artist, trackId: track.id };
+        paintYtPlayer();
+        updatePlayerBar();
+        return;
+      }
+
+      primeRestoredAudio(track, time);
+      return;
+    }
+
+    /* vídeo do YouTube que não estava guardado na biblioteca */
+    if (saved.yt && saved.yt.id) {
+      yt.restoring = true;
+      yt.restore = { time: time };
+      yt.playing = {
+        id: saved.yt.id,
+        title: saved.yt.title || 'Vídeo do YouTube',
+        author: saved.yt.author || '',
+        trackId: null
+      };
+      player.currentId = null;
+      player.queue = [];
+      player.pos = -1;
+      paintYtPlayer();
+      updatePlayerBar();
+    }
+  }
 
   /* catálogo, arquivos locais e os vídeos salvos na conta */
 
@@ -1060,7 +1228,8 @@
     return '<header class="view-header" style="--vh-a:' + o.colors[0] + ';--vh-b:' + o.colors[1] + '">' +
       '<div class="vh-cover">' + (o.coverImg
         ? '<div class="cover cover-img" style="background-image:url(\'' + esc(o.coverImg) + '\')"></div>'
-        : coverHTML(o.coverTitle, o.colors, '', o.coverIcon || '')) + '</div>' +
+        : coverHTML(o.coverTitle, o.colors, '', o.coverIcon || '')) +
+        (o.coverAction || '') + '</div>' +
       '<div class="vh-meta">' +
         '<span class="vh-type">' + esc(o.type) + '</span>' +
         '<h1>' + esc(o.title) + '</h1>' +
@@ -1068,7 +1237,7 @@
       '</div>' +
     '</header>' +
     '<div class="view-body">' +
-      '<div class="view-actions">' + o.actions + '</div>' +
+      (o.actions ? '<div class="view-actions">' + o.actions + '</div>' : '') +
       o.body +
     '</div>';
   }
@@ -1477,6 +1646,9 @@
   function stopYouTubePlayback() {
     destroyYtPlayer();
     yt.playing = null;
+    yt.restore = null;
+    yt.restoring = false;
+    yt.lastTime = 0;
   }
 
   function ensureYtApi(callback) {
@@ -1520,7 +1692,9 @@
         /* controls/fs desligados: nada de interface do YouTube para tocar e
            nenhuma hipótese de abrir o YouTube por um toque no vídeo */
         playerVars: {
-          autoplay: 1,
+          /* ao restaurar depois de recarregar, entra parado no segundo em que
+             estava; só toca quando o utilizador carrega em play */
+          autoplay: yt.restore ? 0 : 1,
           rel: 0,
           playsinline: 1,
           modestbranding: 1,
@@ -1537,9 +1711,23 @@
   function onYtReady(event) {
     yt.ready = true;
     applyYtVolume();
-    if (event && event.target && typeof event.target.playVideo === 'function' && yt.state !== 1) {
+
+    const restore = yt.restore;
+    yt.restore = null;
+
+    if (restore) {
+      /* veio de um recarregamento: fica parado no mesmo segundo */
+      try {
+        if (restore.time > 0) event.target.seekTo(restore.time, true);
+        event.target.pauseVideo();
+        yt.lastTime = restore.time;
+      } catch (err) {}
+      updateProgress();
+      setTimeout(() => { yt.restoring = false; }, 1200);
+    } else if (event && event.target && typeof event.target.playVideo === 'function' && yt.state !== 1) {
       try { event.target.playVideo(); } catch (err) {}
     }
+
     updatePlayerBar();
     startYtTick();
   }
@@ -1560,6 +1748,7 @@
     syncPlayIcon();
     updatePlayerBar();
     updateProgress();
+    if (!yt.restoring) saveNowPlaying();
   }
 
   function startYtTick() {
@@ -1602,6 +1791,9 @@
     if (!id) return;
     audio.pause();
     destroyYtPlayer();
+    yt.restore = null;
+    yt.restoring = false;
+    yt.lastTime = 0;
 
     const track = trackId && trackById.has(trackId)
       ? trackById.get(trackId)
@@ -1947,16 +2139,14 @@
       coverTitle: 'Perfil',
       coverIcon: ICONS.user,
       coverImg: avatar,
+      /* círculo por cima da imagem: abre logo o escolhedor de ficheiros */
+      coverAction:
+        '<button class="avatar-edit" data-act="change-avatar" aria-label="Escolher imagem" ' +
+          'title="Escolher imagem">' + ICONS.camera + '</button>',
       type: 'Sua conta',
       title: nome,
       subtitle: cloudUser ? 'Sua biblioteca fica guardada na nuvem' : 'Sua biblioteca fica guardada nesta conta',
-      actions:
-        '<button class="btn" data-act="change-avatar">' + ICONS.user + '<span>' +
-          (avatar ? 'Mudar imagem' : 'Escolher imagem') + '</span></button>' +
-        (avatar ? '<button class="btn" data-act="clear-avatar">' + ICONS.trash + '<span>Remover imagem</span></button>' : '') +
-        '<button class="btn" data-act="create-playlist">' + ICONS.plus + '<span>Nova playlist</span></button>' +
-        '<button class="btn" data-act="add-files">' + ICONS.upload + '<span>Adicionar músicas</span></button>' +
-        '<button class="btn" data-act="logout">' + ICONS.close + '<span>Terminar sessão</span></button>',
+      actions: '',
       body:
         '<div class="stats">' +
           stat(likes, likes === 1 ? 'música curtida' : 'músicas curtidas') +
@@ -2081,7 +2271,8 @@
   function updateProgress() {
     if (yt.playing) {
       const dur = yt.ready && yt.player ? Number(yt.player.getDuration()) || 0 : 0;
-      const cur = yt.ready && yt.player ? Number(yt.player.getCurrentTime()) || 0 : 0;
+      const cur = yt.ready && yt.player ? Number(yt.player.getCurrentTime()) || 0 : (yt.lastTime || 0);
+      yt.lastTime = cur;
       paintProgress(cur, dur);
 
       if (yt.playing.trackId && dur && metaCache.get(yt.playing.trackId) !== dur) {
@@ -3474,6 +3665,11 @@
         event.stopImmediatePropagation();
       };
 
+      /* um clique que pertence a um painel aberto é para esse painel.
+         Sem isto, o clique numa playlist do menu era consumido pelo painel
+         "a tocar" (obrigava a clicar duas vezes). */
+      if (inside('#menu') || inside('#modal-root') || inside('#queue')) return;
+
       if (menuEl.classList.contains('open') &&
         !inside('#menu') && !inside('[data-act="more"]') &&
         !inside('[data-yt-save]') && !inside('[data-np-add]')) {
@@ -3593,8 +3789,12 @@
       syncPlayIcon();
       updateMediaSession();
       startTick();
+      saveNowPlaying();
     });
-    audio.addEventListener('pause', syncPlayIcon);
+    audio.addEventListener('pause', () => {
+      syncPlayIcon();
+      saveNowPlaying();
+    });
     audio.addEventListener('loadedmetadata', updateProgress);
     audio.addEventListener('timeupdate', () => { if (audio.paused) updateProgress(); });
     audio.addEventListener('ended', () => nextTrack(true));
@@ -3683,6 +3883,30 @@
       if (sw) showAuth(sw.getAttribute('data-auth-switch'));
     });
 
+    /* olho: mostrar/ocultar a palavra-passe sem a apagar */
+    document.addEventListener('click', event => {
+      const eye = event.target.closest('[data-eye]');
+      if (!eye) return;
+      event.preventDefault();
+
+      const input = document.getElementById(eye.getAttribute('data-eye'));
+      if (!input) return;
+
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      eye.innerHTML = show ? ICONS.eyeOff : ICONS.eye;
+      eye.setAttribute('aria-pressed', show ? 'true' : 'false');
+      const label = show ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe';
+      eye.setAttribute('aria-label', label);
+      eye.setAttribute('title', label);
+
+      try {
+        input.focus();
+        const end = input.value.length;
+        input.setSelectionRange(end, end);
+      } catch (err) {}
+    });
+
     window.addEventListener('resize', closeMenu);
     mainEl.addEventListener('scroll', () => {
       if (menuEl.classList.contains('open')) closeMenu();
@@ -3700,6 +3924,10 @@
        Se houver conta na nuvem, a biblioteca dela substitui esta logo a seguir;
        se o utilizador criar conta na nuvem, esta biblioteca é levada para lá. */
     if (contas.currentId) loadStoreFor(contas.currentId);
+
+    /* sem nuvem, a faixa que estava aberta volta parada (a nuvem trata disto
+       quando a sessão do Firebase é retomada) */
+    if (!window.OndaCloud) restoreNowPlaying();
 
     /* o <audio> tem de estar dentro do documento para o telemóvel continuar a
        tocar quando o ecrã desliga ou o app passa para segundo plano */
@@ -3749,11 +3977,24 @@
           hideAuth();
           render();
           updatePlayerBar();
+          restoreNowPlaying();
         });
       }).catch(() => {
         if (!isLoggedIn()) showAuth('login');
       });
     }
+
+    /* guarda a posição da música de vez em quando e ao sair da página; ao
+       recarregar, a barra volta com a mesma faixa parada no mesmo segundo */
+    setInterval(() => {
+      if (isLoggedIn() && isPlayingNow()) saveNowPlaying();
+    }, 4000);
+
+    window.addEventListener('pagehide', saveNowPlaying);
+    window.addEventListener('beforeunload', saveNowPlaying);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') saveNowPlaying();
+    });
 
     /* contas guardadas na base de dados aparecem no ecrã de entrada */
     loadAccountsFromDb().then(added => {
