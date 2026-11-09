@@ -199,11 +199,14 @@
   let cloudSaveTimer = 0;
 
   function isLoggedIn() {
-    return !!(cloudUser || currentAccount());
+    /* com a nuvem ligada só conta a conta Firebase — é a única que existe
+       em todos os aparelhos. Sem nuvem, vale a conta local. */
+    if (window.OndaCloud) return !!cloudUser;
+    return !!currentAccount();
   }
 
   function activeUser() {
-    if (cloudUser) return cloudUser;
+    if (window.OndaCloud) return cloudUser;
     return currentAccount();
   }
 
@@ -578,27 +581,8 @@
 
   function authHTML() {
     const creating = authMode === 'create';
-    const transferring = authMode === 'transfer';
     const cloud = !!window.OndaCloud;
     const known = cloud ? '' : contas.users.map(u => esc(u.email || u.name)).join(', ');
-
-    if (transferring) {
-      return '<div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">' +
-        '<div class="auth-brand">Onda</div>' +
-        '<h1 class="auth-title" id="auth-title">Transferir conta</h1>' +
-        '<p class="auth-sub">No aparelho onde a conta já funciona, abra <strong>Perfil → Transferir conta</strong>, ' +
-          'copie o código e cole-o aqui. Vem a conta, as curtidas, as playlists e o histórico.</p>' +
-        '<form class="auth-form" id="auth-import-form">' +
-          '<label class="auth-label">Código de transferência' +
-            '<textarea id="auth-code" class="auth-textarea" rows="5" spellcheck="false" ' +
-              'placeholder="Cole aqui o código que começa por ONDA1."></textarea>' +
-          '</label>' +
-          '<div class="auth-error" id="auth-error" role="alert"></div>' +
-          '<button class="auth-submit" id="auth-import" type="submit">Importar e entrar</button>' +
-        '</form>' +
-        '<button class="auth-switch" type="button" data-auth-switch="login">Voltar — entrar com email</button>' +
-      '</div>';
-    }
 
     return '<div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">' +
       '<div class="auth-brand">Onda</div>' +
@@ -637,10 +621,6 @@
       '<button class="auth-switch" type="button" data-auth-switch="' + (creating ? 'login' : 'create') + '">' +
         (creating ? 'Já tenho conta — entrar' : 'Ainda não tenho conta — criar') +
       '</button>' +
-      (cloud ? '' :
-        '<button class="auth-switch" type="button" data-auth-switch="transfer">' +
-          'Tenho conta noutro aparelho — transferir' +
-        '</button>') +
       (cloud
         ? '<p class="auth-accounts">Conta na nuvem (Firebase): a mesma conta abre a biblioteca em qualquer aparelho.</p>'
         : (offlineMode()
@@ -662,7 +642,7 @@
   }
 
   function showAuth(mode) {
-    authMode = mode === 'create' ? 'create' : (mode === 'transfer' ? 'transfer' : 'login');
+    authMode = mode === 'create' ? 'create' : 'login';
     let el = document.getElementById('auth');
     if (!el) {
       el = document.createElement('div');
@@ -735,6 +715,13 @@
 
     /* na nuvem: Firebase Authentication + Firestore */
     if (cloud) {
+      /* ao criar conta, aquilo que já existe neste aparelho (curtidas,
+         playlists, histórico) passa para a conta nova */
+      let localSnapshot = null;
+      if (creating) {
+        try { localSnapshot = JSON.parse(JSON.stringify(store)); } catch (err) { localSnapshot = null; }
+      }
+
       const cloudAction = creating
         ? window.OndaCloud.signUp(name, email, pass)
         : window.OndaCloud.signIn(email, pass);
@@ -747,9 +734,23 @@
           avatar: user.avatar || ''
         };
         storeKey = 'onda.cloud.v1:' + user.id;
-        return window.OndaCloud.loadLibrary(user.id);
-      }).then(lib => {
-        applyLibrary(lib);
+        return window.OndaCloud.loadLibrary(user.id).then(lib => {
+          const empty = !lib || (
+            !lib.playlists.length && !lib.likes.length && !lib.recent.length &&
+            !lib.searches.length && !lib.ytTracks.length
+          );
+          const hasLocal = localSnapshot && (
+            localSnapshot.playlists.length || localSnapshot.likes.length || localSnapshot.recent.length ||
+            localSnapshot.ytTracks.length || localSnapshot.searches.length
+          );
+          if (creating && empty && hasLocal) {
+            applyLibrary(localSnapshot);
+            save();
+          } else {
+            applyLibrary(lib);
+          }
+        });
+      }).then(() => {
         afterLogin();
         toast(creating ? 'Conta criada na nuvem. Boas músicas!' : 'Bem-vindo de volta!');
       }).catch(fail);
@@ -1955,8 +1956,6 @@
         (avatar ? '<button class="btn" data-act="clear-avatar">' + ICONS.trash + '<span>Remover imagem</span></button>' : '') +
         '<button class="btn" data-act="create-playlist">' + ICONS.plus + '<span>Nova playlist</span></button>' +
         '<button class="btn" data-act="add-files">' + ICONS.upload + '<span>Adicionar músicas</span></button>' +
-        (cloudUser ? '' : '<button class="btn" data-act="export-account">' + ICONS.phone +
-          '<span>Transferir conta</span></button>') +
         '<button class="btn" data-act="logout">' + ICONS.close + '<span>Terminar sessão</span></button>',
       body:
         '<div class="stats">' +
@@ -3220,10 +3219,6 @@
         openCreatePlaylist([]);
         return;
       }
-      if (action === 'export-account') {
-        openExportAccount();
-        return;
-      }
       if (action === 'logout') {
         logoutAccount();
         return;
@@ -3701,7 +3696,9 @@
       if (ICONS[key]) el.innerHTML = ICONS[key];
     });
 
-    /* a biblioteca pertence à conta: carrega a de quem está ligado */
+    /* a biblioteca pertence à conta: carrega a de quem está ligado.
+       Se houver conta na nuvem, a biblioteca dela substitui esta logo a seguir;
+       se o utilizador criar conta na nuvem, esta biblioteca é levada para lá. */
     if (contas.currentId) loadStoreFor(contas.currentId);
 
     /* o <audio> tem de estar dentro do documento para o telemóvel continuar a
@@ -3714,8 +3711,10 @@
     wireEvents();
     render();
 
-    /* conta obrigatória: sem login o app fica atrás do portão */
-    if (!isLoggedIn()) showAuth('login');
+    /* conta obrigatória: sem login o app fica atrás do portão.
+       Com a nuvem ligada espera-se pela sessão do Firebase antes de pedir
+       login (quem já está ligado não volta a ver o ecrã de entrada). */
+    if (!window.OndaCloud && !isLoggedIn()) showAuth('login');
 
     /* chave do Firebase inválida (apagada/expirada/restrita): entra em modo
        local sozinho, para a música continuar a funcionar sem passos extra */
@@ -3729,7 +3728,10 @@
     /* sessão da nuvem (Firebase): retoma a conta e a biblioteca dela */
     if (window.OndaCloud) {
       window.OndaCloud.session().then(user => {
-        if (!user) return;
+        if (!user) {
+          if (!isLoggedIn()) showAuth('login');
+          return;
+        }
 
         cloudUser = {
           id: user.uid,
@@ -3748,7 +3750,9 @@
           render();
           updatePlayerBar();
         });
-      }).catch(() => {});
+      }).catch(() => {
+        if (!isLoggedIn()) showAuth('login');
+      });
     }
 
     /* contas guardadas na base de dados aparecem no ecrã de entrada */

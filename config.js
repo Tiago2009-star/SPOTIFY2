@@ -10,7 +10,7 @@ window.ONDA_CONFIG = {
   youtubeApiKey: 'AIzaSyBCH_8hi_hMWfjKDASd_u3MOPLFkbzvzNo',
 
   firebaseConfig: {
-    apiKey: 'AIzaSyDC1iNXWzn0HtxC-7NHHnhVklmlhc9B6RQ',
+    apiKey: 'AIzaSyBCH_8hi_hMWfjKDASd_u3MOPLFkbzvzNo',
     authDomain: 'spotify-copia-3809d.firebaseapp.com',
     projectId: 'spotify-copia-3809d',
     storageBucket: 'spotify-copia-3809d.firebasestorage.app',
