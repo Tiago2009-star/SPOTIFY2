@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://www.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://i.ytimg.com" crossorigin>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%231ed760'/%3E%3Cpath d='M22 55c8-10 16-10 24 0s16 10 24 0' fill='none' stroke='%23000' stroke-width='8' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=47">
+  <link rel="stylesheet" href="styles.css?v=55">
 </head>
 <body>
   <a class="skip-link" href="#main">Pular para o conteúdo</a>
@@ -163,7 +163,22 @@
       <span class="np-panel-head-space" aria-hidden="true"></span>
     </div>
 
-    <div class="np-panel-art" id="np-art" aria-hidden="true"><span>♪</span></div>
+    <div class="np-panel-media">
+      <div class="np-panel-art" id="np-art" aria-hidden="true"><span>♪</span></div>
+      <div class="np-panel-video" id="np-video" hidden>
+        <div class="np-panel-video-stage" id="np-video-stage"></div>
+        <span class="np-video-note" id="np-video-note"></span>
+      </div>
+    </div>
+
+    <div class="np-panel-switch" role="group" aria-label="Capa ou vídeo da música">
+      <button type="button" class="np-switch-btn active" data-np-view="cover" aria-pressed="true">
+        <span class="ico" data-ico="image" aria-hidden="true"></span><span>Capa</span>
+      </button>
+      <button type="button" class="np-switch-btn" data-np-view="video" aria-pressed="false">
+        <span class="ico" data-ico="video" aria-hidden="true"></span><span>Vídeo</span>
+      </button>
+    </div>
 
     <div class="np-panel-text">
       <div class="np-panel-title" id="np-big-title">Escolha uma música</div>
@@ -257,7 +272,7 @@
         var script = document.createElement('script');
         if (useModule) script.type = 'module';
         /* versão na URL evita que o navegador rode uma cópia antiga do app */
-        script.src = path + '?v=47';
+        script.src = path + '?v=55';
         script.onload = done;
         script.onerror = function () {
           if (path.indexOf('js/') !== 0) { fail(); return; }

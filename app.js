@@ -115,7 +115,9 @@
     phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>',
     eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
     eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="m4 4 16 16"/></svg>',
-    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h2.4l1.5-2.3h8.2l1.5 2.3H20a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.8" r="3.6"/></svg>'
+    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h2.4l1.5-2.3h8.2l1.5 2.3H20a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.8" r="3.6"/></svg>',
+    image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="9.5" r="1.8"/><path d="m4 17 4.8-4.6a1.6 1.6 0 0 1 2.2 0L20 20"/></svg>',
+    video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="13.5" height="12" rx="2.5"/><path d="m16 10.2 5-2.9v9.4l-5-2.9z"/></svg>'
   };
 
   /* ---------------------------- estado ---------------------------- */
@@ -597,6 +599,7 @@
     saveNowPlaying();
     if (window.OndaCloud && cloudUser) window.OndaCloud.signOutUser();
     cloudUser = null;
+    cloudLibReady = false;
     contas.currentId = '';
     saveAccounts();
 
@@ -765,6 +768,8 @@
 
     /* na nuvem: Firebase Authentication + Firestore */
     if (cloud) {
+      /* enquanto a biblioteca da conta não chegar, nada é gravado */
+      cloudLibReady = false;
       /* ao criar conta, aquilo que já existe neste aparelho (curtidas,
          playlists, histórico) passa para a conta nova */
       let localSnapshot = null;
@@ -794,10 +799,13 @@
             localSnapshot.ytTracks.length || localSnapshot.searches.length
           );
           if (creating && empty && hasLocal) {
+            /* conta nova: leva para a nuvem o que já existe neste aparelho */
             applyLibrary(localSnapshot);
+            cloudLibReady = true;
             save();
           } else {
-            applyLibrary(lib);
+            /* se a nuvem vier vazia mas houver cópia local, recupera-a */
+            useCloudLibrary(user.id, lib);
           }
         });
       }).then(() => {
@@ -877,6 +885,12 @@
   let ytRequestId = 0;
   let ytRafId = 0;
   const ytApiQueue = [];
+
+  /* vista do painel “a tocar”: capa ou vídeo (o vídeo toca junto com a música) */
+  let npView = 'cover';
+  let npStageRaf = 0;
+  const npVisual = { trackId: '', videoId: '', frame: null, requestId: 0 };
+  const visualVideoCache = new Map();
 
   const save = () => {
     if (!isLoggedIn()) return;
@@ -1128,6 +1142,9 @@
   const npLike = $('#np-like');
   const npPanel = $('#np-panel');
   const npArt = $('#np-art');
+  const npVideo = $('#np-video');
+  const npVideoStage = $('#np-video-stage');
+  const npVideoNote = $('#np-video-note');
   const npSource = $('#np-source');
   const npBigTitle = $('#np-big-title');
   const npBigArtist = $('#np-big-artist');
@@ -1641,6 +1658,8 @@
     yt.state = -1;
     const stage = $('#yt-stage');
     if (stage) stage.innerHTML = '';
+    /* se o vídeo estava sobreposto ao painel “a tocar”, volta ao motor */
+    detachYtFrameFromPanel();
   }
 
   function stopYouTubePlayback() {
@@ -1723,6 +1742,13 @@
         yt.lastTime = restore.time;
       } catch (err) {}
       updateProgress();
+      /* o vídeo só aplica o seek depois de preparar: mostra já o segundo
+         guardado em vez de 0:00 */
+      if (restore.time > 0) {
+        let dur = 0;
+        try { dur = Number(event.target.getDuration()) || 0; } catch (err) {}
+        paintProgress(restore.time, dur);
+      }
       setTimeout(() => { yt.restoring = false; }, 1200);
     } else if (event && event.target && typeof event.target.playVideo === 'function' && yt.state !== 1) {
       try { event.target.playVideo(); } catch (err) {}
@@ -2479,6 +2505,204 @@
     return !!(npPanel && npPanel.classList.contains('open'));
   }
 
+  /* ---------- capa ou vídeo no painel “a tocar” (tipo Meulify) ----------
+     O botão “Vídeo” mostra o vídeo a tocar junto com a música. Nos vídeos do
+     YouTube é o próprio player que muda para o painel; nas músicas do catálogo
+     procura-se um vídeo do YouTube e toca-se sem som por baixo da música. */
+  /* O iframe do YouTube NUNCA é movido de sítio: mudar um iframe de pai no
+     DOM recarrega-o e a música recomeça. Em vez disso, o motor (#yt-stage)
+     fica no mesmo sítio e é sobreposto à área do vídeo do painel. */
+  /* enquanto o vídeo está no painel, a posição é recalculada a cada frame:
+     o painel desliza ao abrir e qualquer medição feita a meio da animação
+     deixava o vídeo uns pixels abaixo, por cima dos botões Capa / Vídeo */
+  function stopStageSync() {
+    cancelAnimationFrame(npStageRaf);
+    npStageRaf = 0;
+  }
+
+  function startStageSync() {
+    stopStageSync();
+    const loop = () => {
+      npStageRaf = 0;
+      if (!npPanelOpen() || npView !== 'video' || !yt.playing) return;
+      if (!positionYtStageOverPanel()) return;
+      npStageRaf = requestAnimationFrame(loop);
+    };
+    npStageRaf = requestAnimationFrame(loop);
+  }
+
+  function detachYtFrameFromPanel() {
+    stopStageSync();
+    const stage = $('#yt-stage');
+    if (!stage) return;
+    stage.classList.remove('np-live');
+    stage.classList.remove('np-paused');
+    stage.style.left = '';
+    stage.style.top = '';
+    stage.style.width = '';
+    stage.style.height = '';
+  }
+
+  function positionYtStageOverPanel() {
+    const stage = $('#yt-stage');
+    if (!stage || !npVideoStage) return false;
+    const rect = npVideoStage.getBoundingClientRect();
+    if (!rect.width || !rect.height) return false;
+    stage.classList.add('np-live');
+    /* em pausa o botão de play do YouTube pode ser tocado; a tocar não,
+       para um toque acidental no vídeo não parar a música */
+    stage.classList.toggle('np-paused', !(yt.state === 1 || yt.state === 3));
+    stage.style.left = rect.left + 'px';
+    stage.style.top = rect.top + 'px';
+    stage.style.width = rect.width + 'px';
+    stage.style.height = rect.height + 'px';
+    return true;
+  }
+
+  function attachYtFrameToPanel() {
+    if (!yt.playing || !yt.player) return false;
+    if (typeof yt.player.getIframe !== 'function') return false;
+    let frame = null;
+    try { frame = yt.player.getIframe(); } catch (err) { frame = null; }
+    if (!frame) return false;
+    /* o painel pode ainda não ter tamanho (acabou de abrir): o ciclo
+       trata de o alinhar mal a animação/acabamento o permitam */
+    positionYtStageOverPanel();
+    startStageSync();
+    return true;
+  }
+
+  function clearVisualVideo() {
+    npVisual.requestId += 1;
+    if (npVisual.frame) {
+      try { npVisual.frame.remove(); } catch (err) {}
+    }
+    npVisual.frame = null;
+    npVisual.videoId = '';
+    npVisual.trackId = '';
+  }
+
+  function mountVisualVideo(videoId, track) {
+    if (!npVideoStage || npView !== 'video' || !npPanelOpen()) return;
+    const start = Math.max(0, Math.floor(audio.currentTime || 0));
+    const frame = document.createElement('iframe');
+    frame.className = 'np-visual-frame';
+    frame.src = 'https://www.youtube.com/embed/' + encodeURIComponent(videoId) +
+      '?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&start=' + start;
+    frame.title = 'Vídeo de ' + track.title;
+    frame.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture');
+    frame.setAttribute('allowfullscreen', '');
+    frame.loading = 'lazy';
+    npVideoStage.appendChild(frame);
+    npVisual.frame = frame;
+    npVisual.videoId = videoId;
+    npVisual.trackId = track.id;
+    if (npVideoNote) npVideoNote.textContent = 'Vídeo ilustrativo';
+  }
+
+  function loadVisualVideo(track) {
+    const requestId = ++npVisual.requestId;
+    npVisual.trackId = track.id;
+    npVisual.videoId = '';
+    if (npVisual.frame) {
+      try { npVisual.frame.remove(); } catch (err) {}
+      npVisual.frame = null;
+    }
+
+    if (!ytKey) {
+      if (npVideoNote) npVideoNote.textContent = 'Vídeo indisponível sem a chave do YouTube.';
+      return;
+    }
+
+    const cacheKey = norm(track.title + ' ' + track.artist);
+    const cached = visualVideoCache.get(cacheKey);
+    if (cached) { mountVisualVideo(cached, track); return; }
+
+    if (npVideoNote) npVideoNote.textContent = 'A procurar vídeo…';
+
+    const params = new URLSearchParams({
+      part: 'snippet',
+      type: 'video',
+      maxResults: '3',
+      videoEmbeddable: 'true',
+      q: track.title + ' ' + track.artist,
+      key: ytKey
+    });
+
+    fetch('https://www.googleapis.com/youtube/v3/search?' + params.toString())
+      .then(response => response.json())
+      .then(data => {
+        if (requestId !== npVisual.requestId) return;
+        const item = (Array.isArray(data.items) ? data.items : []).find(v => v && v.id && v.id.videoId);
+        if (!item) {
+          if (npVideoNote) npVideoNote.textContent = 'Sem vídeo para esta música.';
+          return;
+        }
+        visualVideoCache.set(cacheKey, item.id.videoId);
+        mountVisualVideo(item.id.videoId, track);
+      })
+      .catch(() => {
+        if (requestId === npVisual.requestId && npVideoNote) {
+          npVideoNote.textContent = 'Não foi possível carregar o vídeo.';
+        }
+      });
+  }
+
+  function syncNowPlayingVideo() {
+    if (!npVideo) return;
+    const wantVideo = npView === 'video' && npPanelOpen();
+
+    if (!wantVideo) {
+      detachYtFrameFromPanel();
+      clearVisualVideo();
+      npVideo.hidden = true;
+      if (npArt) npArt.hidden = false;
+      return;
+    }
+
+    npVideo.hidden = false;
+    if (npArt) npArt.hidden = true;
+
+    /* vídeo do YouTube: é o próprio player que toca (com o áudio e o vídeo) */
+    if (yt.playing) {
+      if (npVisual.frame) {
+        try { npVisual.frame.remove(); } catch (err) {}
+        npVisual.frame = null;
+      }
+      npVisual.requestId += 1;
+      npVisual.videoId = '';
+      npVisual.trackId = '';
+      const attached = attachYtFrameToPanel();
+      if (npVideoNote) {
+        npVideoNote.textContent = attached ? 'Vídeo do YouTube' : 'A carregar vídeo…';
+      }
+      return;
+    }
+
+    detachYtFrameFromPanel();
+    const track = player.currentId ? trackById.get(player.currentId) : null;
+    if (!track) {
+      clearVisualVideo();
+      if (npVideoNote) npVideoNote.textContent = 'Escolha uma música';
+      return;
+    }
+    /* já há vídeo (ou um pedido a caminho) para esta faixa */
+    if (npVisual.trackId === track.id) return;
+    loadVisualVideo(track);
+  }
+
+  function setNowPlayingView(view) {
+    npView = view === 'video' ? 'video' : 'cover';
+    if (npPanel) {
+      Array.prototype.forEach.call(npPanel.querySelectorAll('[data-np-view]'), btn => {
+        const active = btn.dataset.npView === npView;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    }
+    syncNowPlayingVideo();
+  }
+
   /* faixa que o painel controla: o vídeo salvo ou a música do catálogo */
   function npActiveId() {
     if (yt.playing && yt.playing.trackId && trackById.has(yt.playing.trackId)) return yt.playing.trackId;
@@ -2495,6 +2719,8 @@
     npPanel.classList.remove('open');
     npPanel.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('np-open');
+    /* tira o vídeo do painel e devolve o player do YouTube ao motor invisível */
+    syncNowPlayingVideo();
   }
 
   function renderNowPlaying() {
@@ -2552,6 +2778,8 @@
     const many = player.queue.length > 1;
     npPanelPrev.disabled = !many;
     npPanelNext.disabled = !many;
+
+    syncNowPlayingVideo();
   }
 
   function openNowPlaying() {
@@ -2564,6 +2792,7 @@
     npPanel.classList.add('open');
     npPanel.setAttribute('aria-hidden', 'false');
     document.body.classList.add('np-open');
+    syncNowPlayingVideo();
   }
 
   /* curtir e guardar em playlist direto do painel */
@@ -3262,7 +3491,17 @@
   function submitCreatePlaylist() {
     if (!modalState || modalState.type !== 'create') return;
     const input = $('#pl-name', modalRoot);
-    const playlist = createPlaylist(input ? input.value : '', modalState.tracks);
+    const name = input ? input.value.trim() : '';
+    if (!name) {
+      toast('Dê um nome à playlist');
+      if (input) {
+        input.focus();
+        input.classList.add('field-error');
+        setTimeout(() => input.classList.remove('field-error'), 1400);
+      }
+      return;
+    }
+    const playlist = createPlaylist(name, modalState.tracks);
     const added = modalState.tracks;
     closeModal();
     navigate({ name: 'playlist', id: playlist.id });
@@ -3572,6 +3811,8 @@
     if (npPanel) {
       npPanel.addEventListener('click', event => {
         if (event.target.closest('[data-np-close]')) { closeNowPlaying(); return; }
+        const viewBtn = event.target.closest('[data-np-view]');
+        if (viewBtn) { setNowPlayingView(viewBtn.dataset.npView); return; }
         if (event.target.closest('#np-panel-play')) { togglePlay(); return; }
         if (event.target.closest('#np-panel-prev')) { prevTrack(); return; }
         if (event.target.closest('#np-panel-next')) { nextTrack(false); return; }
@@ -3584,12 +3825,22 @@
       });
 
       if (npPanelSeek) npPanelSeek.addEventListener('input', () => seekTo(npPanelSeek.value));
+
+      /* o vídeo é uma sobreposição: acompanha o painel ao rolar/redimensionar */
+      npPanel.addEventListener('scroll', () => {
+        if (npView === 'video' && npPanelOpen() && yt.playing) positionYtStageOverPanel();
+      }, { passive: true });
     }
+
+    window.addEventListener('resize', () => {
+      if (npView === 'video' && npPanelOpen() && yt.playing) positionYtStageOverPanel();
+    });
 
     /* clicar fora do painel “a tocar” fecha-o */
     document.addEventListener('click', event => {
       if (!npPanelOpen()) return;
       if (event.target.closest('#np-panel') || event.target.closest('.np')) return;
+      if (npPanelOpen() && event.target.closest('#yt-stage')) return;
       closeNowPlaying();
     });
 
@@ -3810,10 +4061,12 @@
       if (action === 'remove-file' && trackId) removeLocalTrack(trackId);
       if (action === 'add' && trackId) addToPlaylist(btn.dataset.pl, trackId);
       if (action === 'newpl' && trackId) {
-        const playlist = createPlaylist('', [trackId]);
-        closeMenu();
-        render();
-        toast('Playlist “' + playlist.name + '” criada');
+        /* o utilizador é que escolhe o nome: abre o formulário com a música
+           já selecionada, em vez de criar uma lista automática */
+        menuEl.classList.remove('open');
+        menuEl.innerHTML = '';
+        menuTrackId = null;
+        openCreatePlaylist([trackId]);
         return;
       }
       closeMenu();
@@ -3970,7 +4223,7 @@
           if (!cloudUser || cloudUser.id !== user.uid) return;
           cloudUser.name = (lib && lib.name) || cloudUser.name;
           cloudUser.avatar = (lib && lib.avatar) || '';
-          applyLibrary(lib);
+          useCloudLibrary(user.uid, lib);
           hideAuth();
           render();
           updatePlayerBar();
