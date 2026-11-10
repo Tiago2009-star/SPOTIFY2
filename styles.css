@@ -806,6 +806,16 @@ input { font: inherit; }
   color: #e6e6e6;
 }
 
+/* ---------- audius (música independente, sem PC) ---------- */
+.audius-panel {
+  border-color: rgba(126, 27, 204, .45);
+  background: rgba(126, 27, 204, .07);
+}
+.panel-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .yt-player { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
 /* motor do player: toca só o áudio, sem vídeo visível.
    Importante: o iframe tem de continuar DENTRO do ecrã. No telemóvel o
@@ -916,6 +926,7 @@ input { font: inherit; }
 }
 .yt-badge { position: absolute; left: 8px; bottom: 8px; z-index: 1; display: grid; place-items: center; }
 .yt-badge svg { width: 24px; height: 15px; }
+.audius-badge svg { width: 18px; height: 18px; }
 .yt-card-title {
   font-size: 13px;
   font-weight: 600;

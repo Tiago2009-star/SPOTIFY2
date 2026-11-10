@@ -13,24 +13,28 @@ App estático (HTML + CSS + JS, sem build e sem dependências) com:
 
 ## Como rodar
 
-Opção 1 — abra `index.html` no navegador (duplo clique).
-
-Opção 2 — sirva a pasta (recomendado, evita bloqueios de `localStorage` em `file://`):
+Duplo clique em **`iniciar.bat`**. Ele instala o `yt-dlp` na primeira vez (é o
+que extrai o áudio das músicas do YouTube) e arranca o `servidor.py` em
+`http://localhost:8080`.
 
 ```bash
-npx serve .
-# ou
-python -m http.server 8080
+python servidor.py
 ```
 
-Depois abra `http://localhost:8080` (`http://localhost:3000` no `npx serve`).
+O servidor é obrigatório: além de servir a pasta, entrega o áudio do YouTube em
+`/audio/<id>` (ver [YouTube](#youtube)). Um `python -m http.server` ou
+`npx serve` serve a interface, mas as músicas caem no player do YouTube e
+deixam de tocar em segundo plano.
+
+No telemóvel, na mesma rede Wi-Fi, abra `http://IP-DO-PC:8080` (o `iniciar.bat`
+mostra o IP).
 
 ## Sobre o catálogo de músicas
 
-O app é **só YouTube**: a música vem da busca do YouTube (vídeo + áudio tocados
-pelo player do app). Não há faixas de demonstração embutidas nem importação de
-arquivos locais — `js/catalog.js` está vazio de propósito, para a biblioteca
-mostrar apenas o que é do YouTube.
+O app é **só YouTube**: a música vem da busca do YouTube (o vídeo identifica a
+faixa; o áudio é extraído pelo servidor). Não há faixas de demonstração embutidas
+nem importação de arquivos locais — `js/catalog.js` está vazio de propósito, para
+a biblioteca mostrar apenas o que é do YouTube.
 
 ### Adicionar suas músicas
 
@@ -69,23 +73,14 @@ servindo de base para isso.
 ```
 index.html      estrutura da tela
 styles.css      tema escuro e layout
-js/catalog.js   catálogo (álbuns e faixas)
-js/config.js    chave da YouTube Data API (ignorado pelo git)
+servidor.py     servidor HTTP local + /audio/<id> (yt-dlp) para tocar em segundo plano
+iniciar.bat     instala o yt-dlp e arranca o servidor
+js/catalog.js   catálogo (vazio: o app é só YouTube)
+js/config.js    chave da YouTube Data API + Firebase (ignorado pelo git)
 js/db.js        base de dados IndexedDB (contas, playlists, faixas, curtidas)
 js/cloud.js     Firebase Authentication + Firestore (contas e playlists na nuvem)
 js/app.js       player, views, playlists, favoritos, contas, persistência
 ```
-
-## Músicas do computador
-
-No botão de importar de “Sua biblioteca” (ao lado do “+”) você escolhe arquivos
-de áudio do PC (mp3, m4a, ogg, wav, flac…). Eles entram na biblioteca **Minhas
-músicas**, tocam no player, entram em playlists e favoritos. O nome é lido como
-“Artista - Título” quando o arquivo segue esse padrão.
-
-Os arquivos ficam no **IndexedDB** do navegador (nada é enviado para servidor) e
-voltam ao abrir o app de novo. Se o navegador bloquear o armazenamento, as
-músicas tocam só naquela sessão — abrir por `http://localhost` costuma resolver.
 
 ## YouTube
 
@@ -97,16 +92,28 @@ tecla, e mostra os vídeos no topo dos resultados. A chave fica em `js/config.js
 window.ONDA_CONFIG = { youtubeApiKey: 'SUA_CHAVE' };
 ```
 
-O vídeo toca no player incorporado, **pequeno e dentro do ecrã** (`#yt-stage`,
-320 × 180 e quase transparente), com `controls: 0`, `fs: 0`, `playsinline: 1`
-e `pointer-events: none`. Ficar dentro da área visível é o que impede o Chrome
-do Android de suspender o player quando a app passa para segundo plano. O app
-mostra apenas a capa, o título e o autor no painel “a tocar” — não existe
-nenhum link ou botão “Abrir no YouTube”, nem interface do YouTube para tocar.
+O som vem do próprio `servidor.py`: em `/audio/<videoId>` ele usa o
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) para descobrir o ficheiro de áudio
+(`itag=140`, `audio/mp4`) desse vídeo e reenvia-o para o navegador, com suporte
+a `Range` (206) para o *seek* funcionar. O app toca esse áudio num `<audio>`
+normal — por isso a música continua com o ecrã desligado e ao mudar para outra
+aplicação, como no Spotify. O endereço fica em cache 3 h no servidor e é
+renovado sozinho quando o YouTube o expira.
 
-Ainda assim, quem manda no player é o YouTube: em alguns telemóveis o
-carregamento do vídeo pode abrir a app do YouTube, e **o áudio do YouTube não
-continua com o ecrã desligado**.
+O player incorporado do YouTube (`#yt-stage`, 320 × 180, quase transparente)
+só é usado em dois casos: no botão **Vídeo** do painel “a tocar” (aí o vídeo
+toca mudo, com o som a continuar no `<audio>`) e como *fallback* se o servidor
+não conseguir o áudio (`503`) — nesse caso aparece o aviso “A tocar pelo
+YouTube (sem segundo plano)”. O app nunca mostra a interface do YouTube, nem
+links ou botões “Abrir no YouTube”.
+
+Como o áudio passa pelo PC, o telemóvel só toca enquanto o `servidor.py`
+estiver ligado e na mesma rede (ou via Tailscale). Se o YouTube bloquear o
+`yt-dlp`, o app cai no iframe e perde o segundo plano; nesse caso atualize:
+
+```bash
+python -m pip install -U yt-dlp
+```
 
 ## Nuvem (Firebase)
 
@@ -161,17 +168,19 @@ configuração, o app funciona como antes, com a base de dados local (IndexedDB)
 O Firestore exige o app servido por http(s): `file://` não funciona — use
 `iniciar.bat` ou o GitHub Pages.
 
-## Escrã desligado e segundo plano
+## Ecrã desligado e segundo plano
 
-Os **arquivos locais** (e qualquer faixa do catálogo) tocam pelo player do
-próprio app: continuam com o ecrã desligado, com o app em segundo plano e
-enquanto o utilizador passa para outra aplicação. A capa, o título e os
-controlos aparecem no aviso do sistema e no ecrã de bloqueio (Media Session), e
-só param quando o app/browser é fechado por completo.
+As músicas do YouTube tocam pelo `<audio>` alimentado pelo `servidor.py` e as
+faixas locais pelo player do próprio app: em ambos os casos a música continua
+com o ecrã desligado, com o app em segundo plano e ao passar para outra
+aplicação. A capa, o título e os controlos aparecem no aviso do sistema e no
+ecrã de bloqueio (Media Session), e só param quando o app/browser é fechado por
+completo ou quando o servidor do PC é desligado.
 
 Se a música ficar **muito tempo pausada**, ao voltar basta tocar em play: o app
 recarrega o áudio do ponto onde parou e continua (o browser pode descartar o
-buffer enquanto o telemóvel está bloqueado).
+buffer enquanto o telemóvel está bloqueado). Ao recarregar a página, a faixa
+volta em pausa no mesmo segundo.
 
 ## Contas e base de dados
 

@@ -63,6 +63,13 @@
   const PROFILE_COLORS = ['#334155', '#1ed760'];
   const HISTORY_COLORS = ['#1e3a8a', '#22d3ee'];
   const YT_COLORS = ['#ff2d55', '#8b5cf6'];
+  const AUDIUS_COLORS = ['#cc0fe0', '#7e1bcc'];
+  /* Audius: música independente em streaming directo. Não precisa de chave,
+     de servidor nem de extrair ficheiros — e um <audio> continua em segundo
+     plano, como no Spotify. */
+  const AUDIUS_API = 'https://api.audius.co/v1';
+  const AUDIUS_APP = 'Onda';
+  const AUDIUS_PREFIX = 'ad-';
   const SOURCE_LABELS = {
     playlist: 'Playlist',
     album: 'Álbum',
@@ -88,6 +95,7 @@
     menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
     youtube: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5.5" width="19" height="13" rx="3.5"/><path d="M10.5 9.4v5.2l4.6-2.6z" fill="currentColor" stroke="none"/></svg>',
     youtubeBadge: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="5.5" width="21" height="13" rx="4" fill="#ff0000"/><path d="M10 9.2v5.6l5.2-2.8z" fill="#fff"/></svg>',
+    audiusBadge: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#7e1bcc"/><path d="M7 14.4V9.6M9.5 16.2V7.8M12 17.2V6.8M14.5 15.2V8.8M17 13.4V10.6" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg>',
     back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
     down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
     play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
@@ -237,7 +245,7 @@
     }
     applyLibrary(lib);
     cloudLibReady = true;
-    /* limpa restos do catálogo antigo e mantém a nuvem só com YouTube */
+    /* limpa restos do catálogo antigo e mantém a nuvem só com YouTube + Audius */
     if (purgeLegacyTracks()) save();
   }
 
@@ -328,14 +336,16 @@
     } catch (err) {}
   }
 
-  /* ---------- limpeza: o Onda é só YouTube ----------
-     Apaga referências a faixas que não sejam vídeos do YouTube (as antigas
-     sh-* / loc-* e qualquer sobra de catálogo). O prefixo válido é yt-. */
+  /* ---------- limpeza: só faixas do YouTube e do Audius ----------
+     Apaga referências a faixas que não sejam vídeos do YouTube nem faixas
+     do Audius (as antigas sh-* / loc-* e qualquer sobra de catálogo).
+     Os prefixos válidos são yt- e ad-. */
   function purgeLegacyTracks() {
     let changed = false;
 
-    /* tudo o que não for um vídeo do YouTube registado nesta conta */
-    const legacy = id => typeof id === 'string' && id.indexOf('yt-') !== 0;
+    /* tudo o que não for uma faixa registada nesta conta */
+    const legacy = id => typeof id === 'string' &&
+      id.indexOf('yt-') !== 0 && id.indexOf(AUDIUS_PREFIX) !== 0;
     const clean = list => {
       const arr = Array.isArray(list) ? list : [];
       const out = arr.filter(id => !legacy(id));
@@ -962,12 +972,18 @@
     muted: false,
     restore: null, restoring: false,
     /* controlo do "não pares quando a app sai do ecrã" (ver onYtState) */
-    userPaused: false, backgroundRetries: 0
+    userPaused: false, backgroundRetries: 0,
+    /* true quando o som vem de /audio/<id> (áudio extraído do vídeo), em vez
+       do iframe do YouTube — é isto que permite tocar em segundo plano */
+    stream: false
   };
   let ytTimer = 0;
   let ytRequestId = 0;
   let ytRafId = 0;
   const ytApiQueue = [];
+
+  /* resultados da busca do Audius (independente do YouTube) */
+  const audius = { query: '', status: 'idle', results: [], error: '', requestId: 0 };
 
   /* vista do painel “a tocar”: capa ou vídeo (o vídeo toca junto com a música) */
   let npView = 'cover';
@@ -1012,7 +1028,7 @@
     if (!track && !yt.playing) return;
 
     let time = audio.currentTime || 0;
-    if (yt.playing) {
+    if (yt.playing && !yt.stream) {
       time = (yt.ready && yt.player && typeof yt.player.getCurrentTime === 'function')
         ? Number(yt.player.getCurrentTime()) || 0
         : (yt.lastTime || 0);
@@ -1077,9 +1093,15 @@
       player.pos = index === -1 ? 0 : index;
 
       if (track.yt) {
-        yt.restoring = true;
-        yt.restore = { time: time };
         yt.playing = { id: track.videoId, title: track.title, author: track.artist, trackId: track.id };
+        if (canStream()) {
+          /* volta parada no mesmo segundo: o áudio já carrega nesse ponto */
+          startStream(track.videoId, time, false);
+          if (time > 0) paintProgress(time, Number(track.duration) || 0);
+        } else {
+          yt.restoring = true;
+          yt.restore = { time: time };
+        }
         paintYtPlayer();
         updatePlayerBar();
         return;
@@ -1091,8 +1113,6 @@
 
     /* vídeo do YouTube que não estava guardado na biblioteca */
     if (saved.yt && saved.yt.id) {
-      yt.restoring = true;
-      yt.restore = { time: time };
       yt.playing = {
         id: saved.yt.id,
         title: saved.yt.title || 'Vídeo do YouTube',
@@ -1102,6 +1122,13 @@
       player.currentId = null;
       player.queue = [];
       player.pos = -1;
+      if (canStream()) {
+        startStream(saved.yt.id, time, false);
+        if (time > 0) paintProgress(time, 0);
+      } else {
+        yt.restoring = true;
+        yt.restore = { time: time };
+      }
       paintYtPlayer();
       updatePlayerBar();
     }
@@ -1578,7 +1605,7 @@
     if (!term) {
       const saved = allIds();
       return '<div class="view-body search-body"><h1 class="page-title">Buscar</h1>' +
-        '<p class="page-sub">Escreva o nome de uma música, artista ou álbum — os resultados do YouTube aparecem sozinhos.</p>' +
+        '<p class="page-sub">Escreva o nome de uma música, artista ou álbum — os resultados do YouTube e do Audius aparecem sozinhos.</p>' +
         (saved.length ? subSection('Músicas salvas', trackListHTML(saved)) : '') +
         '<div class="note"><strong>Histórico:</strong> fica na própria barra de pesquisa — clique nela para ver as ' +
           'músicas tocadas e as buscas recentes, e escreva para filtrar.</div>' +
@@ -1622,6 +1649,7 @@
     return '<div class="view-body search-body"><h1 class="page-title">Resultados para “' + esc(q) + '”</h1>' +
       '<div id="yt-player-slot"></div>' +
       '<div id="yt-panel">' + ytPanelHTML(q) + '</div>' +
+      '<div id="audius-panel">' + audiusPanelHTML(q) + '</div>' +
       blocks.join('') + '</div>';
   }
 
@@ -1722,7 +1750,69 @@
     '</section>';
   }
 
-  /* -------- vídeos do YouTube salvos (favoritos e playlists) -------- */
+  /* ------------------------------ audius ------------------------------ */
+  /* Música independente, em streaming directo: não precisa de chave, de
+     servidor nem de extrair áudio. O <audio> do app toca o stream e continua
+     em segundo plano, como qualquer música. */
+  function audiusGridHTML() {
+    return '<div class="yt-grid">' + audius.results.map(item => {
+      const id = audiusTrackId(item.id);
+      const isLiked = likedSet.has(id);
+      const data = ' data-ad-title="' + esc(item.title) + '" data-ad-author="' + esc(item.author) +
+        '" data-ad-thumb="' + esc(item.thumb) + '" data-ad-duration="' + (item.duration || 0) + '"';
+
+      return '<div class="yt-card" role="button" tabindex="0" data-ad-play="' + esc(item.id) + '"' + data + '>' +
+        '<span class="yt-thumb">' +
+          (item.thumb ? '<img src="' + esc(item.thumb) + '" alt="" loading="lazy">' : '') +
+          '<span class="yt-badge audius-badge">' + ICONS.audiusBadge + '</span>' +
+        '</span>' +
+        '<span class="yt-card-text">' +
+          '<span class="yt-card-title">' + esc(item.title) + '</span>' +
+          '<span class="yt-card-sub">' + esc(item.author) +
+            (item.duration ? ' · ' + fmt(item.duration) : '') + '</span>' +
+        '</span>' +
+        '<span class="yt-card-tools">' +
+          '<button type="button" class="icon-btn heart-btn' + (isLiked ? ' liked' : '') + '" data-ad-like="' +
+            esc(item.id) + '"' + data + ' aria-label="' +
+            (isLiked ? 'Remover dos favoritos' : 'Adicionar aos favoritos') + '" title="Favoritar">' +
+            (isLiked ? ICONS.heartFilled : ICONS.heart) + '</button>' +
+          '<button type="button" class="icon-btn" data-ad-save="' + esc(item.id) + '"' + data +
+            ' aria-label="Adicionar a uma playlist" title="Adicionar a uma playlist">' + ICONS.plus + '</button>' +
+        '</span>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
+
+  function audiusPanelHTML(term) {
+    if (!term) return '';
+    if (!audius.query || norm(audius.query) !== norm(term)) return '';
+
+    let body;
+    if (audius.status === 'loading') {
+      body = '<div class="empty">Buscando no Audius…</div>';
+    } else if (audius.status === 'error') {
+      body = '<div class="empty">' + esc(audius.error) + '</div>';
+    } else if (audius.results.length) {
+      body = audiusGridHTML();
+    } else if (audius.status === 'ready') {
+      body = '<div class="empty">Nenhuma música encontrada no Audius para “' + esc(term) + '”.</div>';
+    } else {
+      return '';
+    }
+
+    return '<section class="yt-panel audius-panel">' +
+      '<div class="yt-panel-head"><h2 class="section-title">Audius</h2>' +
+        '<span class="panel-note">Música independente · toca sem PC e em segundo plano</span></div>' +
+      body +
+    '</section>';
+  }
+
+  function paintAudiusPanel() {
+    const el = $('#audius-panel');
+    if (el) el.innerHTML = audiusPanelHTML(currentSearchTerm());
+  }
+
+  /* ---- faixas guardadas: vídeos do YouTube e músicas do Audius ---- */
   function ytTrackId(videoId) {
     return 'yt-' + String(videoId || '').trim();
   }
@@ -1731,23 +1821,65 @@
     return 'https://i.ytimg.com/vi/' + encodeURIComponent(videoId) + '/mqdefault.jpg';
   }
 
+  function audiusTrackId(trackId) {
+    return AUDIUS_PREFIX + String(trackId || '').trim();
+  }
+
+  function audiusStreamUrl(trackId) {
+    return AUDIUS_API + '/tracks/' + encodeURIComponent(trackId) + '/stream?app_name=' +
+      encodeURIComponent(AUDIUS_APP);
+  }
+
+  function audiusArtwork(item) {
+    const art = (item && item.artwork) || {};
+    return art['480x480'] || art['150x150'] || art['1000x1000'] || '';
+  }
+
+  function audiusArtist(item) {
+    const user = item && item.user ? item.user : {};
+    return user.name || user.handle || 'Audius';
+  }
+
+  /* regista uma faixa do YouTube (record normal) ou do Audius
+     (record.provider === 'audius') no catálogo desta conta */
   function registerYtTrack(record) {
-    if (!record || !record.videoId) return null;
-    const id = ytTrackId(record.videoId);
+    if (!record) return null;
+    const isAudius = record.provider === 'audius';
+    const sourceId = isAudius ? (record.audiusId || record.videoId) : record.videoId;
+    if (!sourceId) return null;
+
+    const id = isAudius ? audiusTrackId(sourceId) : ytTrackId(sourceId);
     if (trackById.has(id)) return trackById.get(id);
 
-    const track = {
-      id: id,
-      videoId: record.videoId,
-      title: record.title || 'Vídeo do YouTube',
-      artist: record.artist || 'YouTube',
-      album: 'YouTube',
-      colors: YT_COLORS,
-      thumb: record.thumb || ytThumb(record.videoId),
-      duration: Math.max(0, Number(record.duration) || 0),
-      src: '',
-      yt: true
-    };
+    const track = isAudius
+      ? {
+          id: id,
+          provider: 'audius',
+          audiusId: sourceId,
+          title: record.title || 'Faixa do Audius',
+          artist: record.artist || 'Audius',
+          album: 'Audius',
+          colors: AUDIUS_COLORS,
+          thumb: record.thumb || '',
+          duration: Math.max(0, Number(record.duration) || 0),
+          /* o som vem direto da API do Audius: um <audio> normal, que continua
+             a tocar em segundo plano e não precisa do PC nem de /audio */
+          src: audiusStreamUrl(sourceId),
+          yt: false
+        }
+      : {
+          id: id,
+          videoId: record.videoId,
+          title: record.title || 'Vídeo do YouTube',
+          artist: record.artist || 'YouTube',
+          album: 'YouTube',
+          colors: YT_COLORS,
+          thumb: record.thumb || ytThumb(record.videoId),
+          duration: Math.max(0, Number(record.duration) || 0),
+          src: '',
+          yt: true
+        };
+
     if (track.duration) metaCache.set(id, track.duration);
     ytTracks.push(track);
     trackById.set(id, track);
@@ -1758,21 +1890,46 @@
     return trackById.get(ytTrackId(videoId)) || registerYtTrack({ videoId: videoId, title: title, artist: artist });
   }
 
+  function registerAudiusTrack(item) {
+    if (!item || !item.id) return null;
+    return registerYtTrack({
+      provider: 'audius',
+      audiusId: item.id,
+      title: item.title,
+      artist: item.artist || item.author || audiusArtist(item),
+      thumb: item.thumb || audiusArtwork(item),
+      duration: item.duration
+    });
+  }
+
   function persistYtTracks() {
-    store.ytTracks = ytTracks.map(track => ({
-      videoId: track.videoId,
-      title: track.title,
-      artist: track.artist,
-      thumb: track.thumb,
-      duration: track.duration || metaCache.get(track.id) || 0
-    }));
+    store.ytTracks = ytTracks.map(track => {
+      const duration = track.duration || metaCache.get(track.id) || 0;
+      if (track.provider === 'audius') {
+        return {
+          provider: 'audius',
+          audiusId: track.audiusId,
+          title: track.title,
+          artist: track.artist,
+          thumb: track.thumb,
+          duration: duration
+        };
+      }
+      return {
+        videoId: track.videoId,
+        title: track.title,
+        artist: track.artist,
+        thumb: track.thumb,
+        duration: duration
+      };
+    });
     save();
   }
 
-  /* sai do catálogo interno quando o vídeo não é mais favorito nem está em playlist */
+  /* sai do catálogo interno quando a música não é mais favorita nem está em playlist */
   function dropOrphanYtTrack(id) {
     const track = trackById.get(id);
-    if (!track || !track.yt) return;
+    if (!track || (!track.yt && track.provider !== 'audius')) return;
     if (likedSet.has(id)) return;
     if (player.currentId === id) return;
     if (yt.playing && yt.playing.trackId === id) return;
@@ -1792,6 +1949,12 @@
     yt.status = 'idle';
     yt.error = '';
     yt.results = [];
+
+    audius.requestId += 1;
+    audius.query = '';
+    audius.status = 'idle';
+    audius.error = '';
+    audius.results = [];
   }
 
   function paintYtPanel() {
@@ -1823,6 +1986,7 @@
 
   function stopYouTubePlayback() {
     destroyYtPlayer();
+    yt.stream = false;
     yt.playing = null;
     yt.restore = null;
     yt.restoring = false;
@@ -1852,7 +2016,7 @@
 
   function mountYtPlayer() {
     const stage = $('#yt-stage');
-    if (!stage || !yt.playing || yt.player || isFileProtocol()) return;
+    if (!stage || !yt.playing || yt.player || isFileProtocol() || yt.stream) return;
 
     const videoId = yt.playing.id;
     ensureYtApi(function () {
@@ -1991,6 +2155,60 @@
     save();
   }
 
+  /* ---------- som em segundo plano: áudio direto do servidor ----------
+     O iframe do YouTube é pausado pelo browser quando a app sai do ecrã.
+     Por isso o som da faixa vem de /audio/<id>: o servidor extrai o áudio do
+     vídeo e o <audio> do app toca-o — e um <audio> continua a tocar com o
+     telemóvel noutra aplicação, como no Spotify. Se o servidor não conseguir,
+     o player do YouTube volta a assumir. */
+  function canStream() {
+    return !isFileProtocol();
+  }
+
+  function startStream(videoId, startAt, autoplay) {
+    yt.stream = true;
+    yt.state = autoplay ? 3 : 2;
+
+    audio.pause();
+    audio.preload = 'auto';
+    audio.src = '/audio/' + encodeURIComponent(videoId);
+    try { audio.load(); } catch (err) {}
+
+    const at = Math.max(0, Number(startAt) || 0);
+    audio.addEventListener('loadedmetadata', () => {
+      if (at > 0) {
+        const dur = Number.isFinite(audio.duration) ? audio.duration : at;
+        try { audio.currentTime = clamp(at, 0, Math.max(0, dur - 0.3)); } catch (err) {}
+      }
+      updateProgress();
+    }, { once: true });
+
+    if (autoplay) resumeStream();
+    else updateProgress();
+  }
+
+  function resumeStream() {
+    if (!yt.stream) return;
+    const attempt = audio.play();
+    if (attempt && typeof attempt.catch === 'function') {
+      attempt.catch(() => setPlayIcon(false));
+    }
+  }
+
+  /* o servidor não conseguiu entregar o áudio: volta ao player do YouTube */
+  function fallbackToYtPlayer() {
+    if (!yt.playing) return;
+    yt.stream = false;
+    yt.state = -1;
+    try {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    } catch (err) {}
+    mountYtPlayer();
+    syncPlayIcon();
+  }
+
   function playYouTube(id, title, author, trackId) {
     if (!id) return;
     audio.pause();
@@ -2026,15 +2244,68 @@
       author: author || '',
       trackId: track ? track.id : null
     };
+    yt.stream = canStream();
     paintYtPlayer();
     updatePlayerBar();
+    if (yt.stream) startStream(id, 0, true);
     /* não rola nem troca de tela: a busca e os resultados continuam onde estão */
     if (isFileProtocol()) toast('Vídeo não toca em file:// (erro 153). Rode iniciar.bat e abra localhost:8080.');
+  }
+
+  function searchAudius(term) {
+    const query = String(term || '').trim();
+    if (!query) return;
+
+    audius.query = query;
+    audius.status = 'loading';
+    audius.error = '';
+    audius.results = [];
+    paintAudiusPanel();
+
+    const requestId = ++audius.requestId;
+    const params = new URLSearchParams({
+      query: query,
+      limit: '24',
+      app_name: AUDIUS_APP
+    });
+
+    fetch(AUDIUS_API + '/tracks/search?' + params.toString(), { cache: 'no-store' })
+      .then(response => response.json()
+        .catch(() => null)
+        .then(data => ({ ok: response.ok, status: response.status, data: data })))
+      .then(result => {
+        if (requestId !== audius.requestId) return;
+        if (!result.ok) throw new Error('HTTP ' + result.status);
+
+        const items = result.data && Array.isArray(result.data.data) ? result.data.data : [];
+        audius.results = items
+          .filter(item => item && item.id && item.is_streamable !== false && item.is_delete !== true)
+          .map(item => ({
+            id: item.id,
+            title: item.title || 'Faixa do Audius',
+            author: audiusArtist(item),
+            thumb: audiusArtwork(item),
+            duration: Math.max(0, Number(item.duration) || 0)
+          }));
+        audius.status = 'ready';
+        paintAudiusPanel();
+      })
+      .catch(err => {
+        if (requestId !== audius.requestId) return;
+        audius.status = 'error';
+        audius.error = 'Falha na busca do Audius: ' +
+          (err && err.message ? err.message : 'erro desconhecido') +
+          '. Verifique a ligação à internet.';
+        paintAudiusPanel();
+      });
   }
 
   function searchYouTube(term) {
     const query = String(term || '').trim();
     if (!query) return;
+    /* o Audius é independente do YouTube: a busca dele arranca sempre, mesmo
+       que falte a chave da YouTube Data API */
+    searchAudius(query);
     yt.query = query;
 
     if (!ytKey) {
@@ -2313,6 +2584,7 @@
   }
 
   function isPlayingNow() {
+    if (yt.stream) return !audio.paused && !audio.ended;
     if (yt.playing) return yt.state === 1 || yt.state === 3;
     return !audio.paused && !!player.currentId;
   }
@@ -2338,6 +2610,12 @@
 
   function syncWakeLock() {
     if (!('wakeLock' in navigator)) return;
+    /* com o áudio do servidor a música continua em segundo plano: o ecrã
+       pode apagar-se à vontade */
+    if (yt.stream) {
+      releaseWakeLock();
+      return;
+    }
     if (!isPlayingNow() || document.visibilityState !== 'visible') {
       releaseWakeLock();
       return;
@@ -2379,6 +2657,23 @@
   }
 
   function updateProgress() {
+    if (yt.stream) {
+      const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+      const cur = audio.currentTime || 0;
+      paintProgress(cur, dur);
+
+      if (dur && yt.playing && yt.playing.trackId && metaCache.get(yt.playing.trackId) !== dur) {
+        metaCache.set(yt.playing.trackId, dur);
+        const track = trackById.get(yt.playing.trackId);
+        if (track && track.duration !== dur) {
+          track.duration = dur;
+          persistYtTracks();
+        }
+        paintDuration(yt.playing.trackId, dur);
+      }
+      return;
+    }
+
     if (yt.playing) {
       const dur = yt.ready && yt.player ? Number(yt.player.getDuration()) || 0 : 0;
       const cur = yt.ready && yt.player ? Number(yt.player.getCurrentTime()) || 0 : (yt.lastTime || 0);
@@ -2528,6 +2823,13 @@
 
   function mediaSeekBy(delta) {
     const step = Number(delta) || 10;
+    if (yt.stream) {
+      const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+      if (!dur) return;
+      audio.currentTime = clamp((audio.currentTime || 0) + step, 0, dur);
+      updateProgress();
+      return;
+    }
     if (yt.playing) {
       if (!yt.ready || !yt.player) return;
       try {
@@ -2544,6 +2846,13 @@
   }
 
   function mediaSeekTo(seconds) {
+    if (yt.stream) {
+      const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+      if (!dur) return;
+      audio.currentTime = clamp(Number(seconds) || 0, 0, dur);
+      updateProgress();
+      return;
+    }
     if (yt.playing) {
       if (!yt.ready || !yt.player) return;
       try { yt.player.seekTo(Math.max(0, Number(seconds) || 0), true); } catch (err) {}
@@ -2761,7 +3070,7 @@
     if (npArt) npArt.hidden = true;
 
     /* vídeo do YouTube: é o próprio player que toca (com o áudio e o vídeo) */
-    if (yt.playing) {
+    if (yt.playing && !yt.stream) {
       if (npVisual.frame) {
         try { npVisual.frame.remove(); } catch (err) {}
         npVisual.frame = null;
@@ -2773,6 +3082,18 @@
       if (npVideoNote) {
         npVideoNote.textContent = attached ? 'Vídeo do YouTube' : 'A carregar vídeo…';
       }
+      return;
+    }
+
+    /* som vem do áudio em segundo plano: o vídeo é uma cópia silenciosa */
+    if (yt.playing && yt.stream) {
+      detachYtFrameFromPanel();
+      const current = player.currentId ? trackById.get(player.currentId) : null;
+      if (npVisual.videoId !== yt.playing.id) {
+        clearVisualVideo();
+        mountVisualVideo(yt.playing.id, current || { id: '', title: yt.playing.title });
+      }
+      if (npVideoNote) npVideoNote.textContent = 'Vídeo do YouTube';
       return;
     }
 
@@ -2926,6 +3247,14 @@
 
   function seekTo(value) {
     const pct = clamp(Number(value) || 0, 0, 1000) / 1000;
+
+    if (yt.stream) {
+      const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+      if (!dur) return;
+      audio.currentTime = pct * dur;
+      updateProgress();
+      return;
+    }
 
     if (yt.playing) {
       if (!yt.ready || !yt.player) return;
@@ -3318,6 +3647,20 @@
 
   function togglePlay() {
     if (!requireAccount()) return;
+    if (yt.stream) {
+      if (audio.paused || audio.ended) {
+        if (audio.ended) {
+          try { audio.currentTime = 0; } catch (err) {}
+        }
+        yt.userPaused = false;
+        resumeStream();
+      } else {
+        yt.userPaused = true;
+        audio.pause();
+      }
+      syncPlayIcon();
+      return;
+    }
     if (yt.playing) {
       if (!yt.player || !yt.ready) return;
       try {
@@ -3350,6 +3693,11 @@
     if (!isLoggedIn()) return;
     if (!player.queue.length) return;
     if (auto && player.repeat === 'one') {
+      if (yt.stream) {
+        audio.currentTime = 0;
+        resumeStream();
+        return;
+      }
       if (yt.playing) {
         try { yt.player.seekTo(0, true); yt.player.playVideo(); } catch (err) {}
         return;
@@ -3378,7 +3726,13 @@
   }
 
   function prevTrack() {
-    if (yt.playing) {
+    if (yt.stream) {
+      if ((audio.currentTime || 0) > 3) {
+        audio.currentTime = 0;
+        updateProgress();
+        return;
+      }
+    } else if (yt.playing) {
       const cur = yt.ready && yt.player ? Number(yt.player.getCurrentTime()) || 0 : 0;
       if (cur > 3) {
         try { yt.player.seekTo(0, true); } catch (err) {}
@@ -3406,6 +3760,20 @@
   }
 
   /* --------------------------- favoritos --------------------------- */
+  function audiusItemFromEl(el) {
+    const id = el.dataset.adPlay || el.dataset.adLike || el.dataset.adSave || '';
+    if (!id) return null;
+    const found = audius.results.find(item => item.id === id);
+    if (found) return found;
+    return {
+      id: id,
+      title: el.dataset.adTitle || 'Faixa do Audius',
+      author: el.dataset.adAuthor || 'Audius',
+      thumb: el.dataset.adThumb || '',
+      duration: Math.max(0, Number(el.dataset.adDuration) || 0)
+    };
+  }
+
   function toggleLike(id) {
     const track = trackById.get(id);
     if (!track) return;
@@ -3701,6 +4069,20 @@
       return;
     }
 
+    const adLikeBtn = event.target.closest('[data-ad-like]');
+    if (adLikeBtn) {
+      const track = registerAudiusTrack(audiusItemFromEl(adLikeBtn));
+      if (track) toggleLike(track.id);
+      return;
+    }
+
+    const adSaveBtn = event.target.closest('[data-ad-save]');
+    if (adSaveBtn) {
+      const track = registerAudiusTrack(audiusItemFromEl(adSaveBtn));
+      if (track) openTrackMenu(track.id, adSaveBtn);
+      return;
+    }
+
     const ytLikeBtn = event.target.closest('[data-yt-like]');
     if (ytLikeBtn) {
       const track = ensureYtTrack(ytLikeBtn.dataset.ytLike, ytLikeBtn.dataset.ytTitle, ytLikeBtn.dataset.ytAuthor);
@@ -3725,6 +4107,15 @@
       /* a busca fica onde está: o vídeo entra no histórico e o termo em “Buscas recentes” */
       if (route.name === 'search') pushSearch(route.q);
       playYouTube(ytCard.dataset.ytPlay, ytCard.dataset.ytTitle, ytCard.dataset.ytAuthor);
+      return;
+    }
+
+    const adCard = event.target.closest('[data-ad-play]');
+    if (adCard) {
+      const track = registerAudiusTrack(audiusItemFromEl(adCard));
+      if (!track) return;
+      if (route.name === 'search') pushSearch(route.q);
+      play(track.id, [track.id], 'taste');
       return;
     }
 
@@ -3959,7 +4350,8 @@
       if (event.target.closest('#yt-stage')) return;
       if (event.target.closest('#menu') || event.target.closest('#queue') ||
         event.target.closest('#modal-root') || event.target.closest('#btn-queue') ||
-        event.target.closest('[data-act="more"]') || event.target.closest('[data-yt-save]')) return;
+        event.target.closest('[data-act="more"]') || event.target.closest('[data-yt-save]') ||
+        event.target.closest('[data-ad-save]') || event.target.closest('[data-ad-like]')) return;
       closeNowPlaying();
     });
 
@@ -4053,6 +4445,7 @@
       }
 
       if (npPanelOpen() && !inside('#np-panel') && !inside('.np')) {
+        if (inside('[data-act="more"]') || inside('[data-yt-save]') || inside('[data-ad-save]')) return;
         closeNowPlaying();
         consume();
         return;
@@ -4148,7 +4541,7 @@
     }
 
     audio.addEventListener('play', () => {
-      if (yt.playing) {
+      if (yt.playing && !yt.stream) {
         stopYouTubePlayback();
         paintYtPlayer();
         updatePlayerBar();
@@ -4166,6 +4559,12 @@
     audio.addEventListener('timeupdate', () => { if (audio.paused) updateProgress(); });
     audio.addEventListener('ended', () => nextTrack(true));
     audio.addEventListener('error', () => {
+      /* o servidor local não conseguiu o áudio: volta ao player do YouTube */
+      if (yt.stream && yt.playing) {
+        toast('A tocar pelo YouTube (sem segundo plano).');
+        fallbackToYtPlayer();
+        return;
+      }
       if (audio.src && audio.error) toast('Não foi possível carregar o áudio. Verifique sua conexão.');
     });
 
@@ -4203,7 +4602,8 @@
     document.addEventListener('click', event => {
       if (!menuEl.classList.contains('open')) return;
       if (event.target.closest('#menu') || event.target.closest('[data-act="more"]') ||
-        event.target.closest('[data-yt-save]') || event.target.closest('[data-np-add]')) return;
+        event.target.closest('[data-yt-save]') || event.target.closest('[data-np-add]') ||
+        event.target.closest('[data-ad-save]') || event.target.closest('[data-ad-like]')) return;
       closeMenu();
     });
 

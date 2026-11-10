@@ -10,6 +10,14 @@ ipconfig | findstr /i "IPv4"
 echo.
 echo   Feche esta janela para parar o servidor.
 echo.
+
+rem o audio em segundo plano vem do yt-dlp: instala-o na primeira vez
+python -c "import yt_dlp" 2>nul
+if errorlevel 1 (
+  echo   A instalar o suporte de audio ^(yt-dlp^)...
+  python -m pip install --quiet --disable-pip-version-check yt-dlp
+)
+
 start "" "http://localhost:8080"
-py -3 servidor.py || python servidor.py || py -3 -m http.server 8080 || python -m http.server 8080 || npx --yes http-server -p 8080 -c-1
+python servidor.py || py -3 servidor.py
 pause
