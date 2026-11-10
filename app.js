@@ -43,34 +43,32 @@
   }
 
   /* --------------------------- catálogo --------------------------- */
-  const catalog = window.CATALOG || { albums: [], tracks: [] };
-  const albums = catalog.albums;
-  const tracks = catalog.tracks;
+  /* O app é só YouTube: não há catálogo embutido. Mesmo que um catalog.js
+     antigo fique em cache no navegador, nenhuma faixa de demonstração entra. */
+  const albums = [];
+  const tracks = [];
   const albumById = new Map(albums.map(a => [a.id, a]));
   const trackById = new Map(tracks.map(t => [t.id, t]));
-  const localTracks = [];
   const albumTrackIds = id => tracks.filter(t => t.albumId === id).map(t => t.id);
 
   function allTracks() {
-    return tracks.concat(localTracks, ytTracks);
+    return tracks.concat(ytTracks);
   }
 
   function allIds() {
-    return tracks.map(t => t.id)
-      .concat(localTracks.map(t => t.id), ytTracks.map(t => t.id));
+    return tracks.map(t => t.id).concat(ytTracks.map(t => t.id));
   }
 
   const LIKED_COLORS = ['#4f46e5', '#a855f7'];
   const PROFILE_COLORS = ['#334155', '#1ed760'];
   const HISTORY_COLORS = ['#1e3a8a', '#22d3ee'];
-  const LOCAL_COLORS = ['#0f766e', '#22d3ee'];
   const YT_COLORS = ['#ff2d55', '#8b5cf6'];
   const SOURCE_LABELS = {
     playlist: 'Playlist',
     album: 'Álbum',
     liked: 'Músicas Curtidas',
-    local: 'Minhas músicas',
     history: 'Histórico',
+    top: 'Músicas mais ouvidas',
     taste: 'Baseado no seu gosto',
     catalog: 'Baseado no seu gosto'
   };
@@ -106,7 +104,6 @@
     heartFilled: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-8-4.9-8-10.2A4.8 4.8 0 0 1 12 7a4.8 4.8 0 0 1 8 3.8C20 16.1 12 21 12 21z"/></svg>',
     more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
-    upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>',
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 9 17.5 20 6.5"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
@@ -132,6 +129,7 @@
     likes: [],
     playlists: [],
     recent: [],
+    plays: {},
     ytTracks: [],
     searches: [],
     prefs: { volume: 0.8, shuffle: false, repeat: 'off' }
@@ -221,6 +219,7 @@
       (Array.isArray(lib.likes) && lib.likes.length) ||
       (Array.isArray(lib.recent) && lib.recent.length) ||
       (Array.isArray(lib.searches) && lib.searches.length) ||
+      (lib.plays && typeof lib.plays === 'object' && Object.keys(lib.plays).length) ||
       (Array.isArray(lib.ytTracks) && lib.ytTracks.length)
     ));
   }
@@ -232,11 +231,14 @@
     if (!libHasContent(lib) && libHasContent(cache)) {
       applyLibrary(cache);
       cloudLibReady = true;
+      purgeLegacyTracks();
       save();
       return;
     }
     applyLibrary(lib);
     cloudLibReady = true;
+    /* limpa restos do catálogo antigo e mantém a nuvem só com YouTube */
+    if (purgeLegacyTracks()) save();
   }
 
   function isLoggedIn() {
@@ -259,6 +261,13 @@
     if (Array.isArray(lib.likes)) store.likes = lib.likes;
     if (Array.isArray(lib.recent)) store.recent = lib.recent;
     if (Array.isArray(lib.searches)) store.searches = lib.searches;
+    if (lib.plays && typeof lib.plays === 'object') {
+      store.plays = {};
+      Object.keys(lib.plays).forEach(id => {
+        const count = Number(lib.plays[id]);
+        if (Number.isFinite(count) && count > 0) store.plays[id] = count;
+      });
+    }
     if (Array.isArray(lib.ytTracks)) store.ytTracks = lib.ytTracks;
     if (lib.prefs) {
       if (typeof lib.prefs.volume === 'number') store.prefs.volume = lib.prefs.volume;
@@ -284,6 +293,7 @@
     store.likes = [];
     store.playlists = [];
     store.recent = [];
+    store.plays = {};
     store.ytTracks = [];
     store.searches = [];
     store.prefs = { volume: 0.8, shuffle: false, repeat: 'off' };
@@ -299,6 +309,13 @@
         store.playlists = saved.playlists.filter(p => p && p.id && Array.isArray(p.tracks));
       }
       if (Array.isArray(saved.recent)) store.recent = saved.recent.filter(id => typeof id === 'string');
+      if (saved.plays && typeof saved.plays === 'object') {
+        store.plays = {};
+        Object.keys(saved.plays).forEach(id => {
+          const count = Number(saved.plays[id]);
+          if (Number.isFinite(count) && count > 0) store.plays[id] = count;
+        });
+      }
       if (Array.isArray(saved.ytTracks)) store.ytTracks = saved.ytTracks;
       if (Array.isArray(saved.searches)) {
         store.searches = saved.searches.filter(s => typeof s === 'string' && s.trim()).slice(0, 8);
@@ -309,6 +326,63 @@
         if (typeof saved.prefs.repeat === 'string') store.prefs.repeat = saved.prefs.repeat;
       }
     } catch (err) {}
+  }
+
+  /* ---------- limpeza: o Onda é só YouTube ----------
+     Apaga referências às 16 faixas de demonstração antigas (sh-*) e a
+     qualquer resto de catálogo nas curtidas, histórico, playlists e fila. */
+  function purgeLegacyTracks() {
+    let changed = false;
+
+    /* restos do catálogo antigo (sh-*) e dos ficheiros locais (loc-*) */
+    const legacy = id => typeof id === 'string' && (id.indexOf('sh-') === 0 || id.indexOf('loc-') === 0);
+    const clean = list => {
+      const arr = Array.isArray(list) ? list : [];
+      const out = arr.filter(id => !legacy(id));
+      if (out.length !== arr.length) changed = true;
+      return out;
+    };
+
+    store.likes = clean(store.likes);
+    store.recent = clean(store.recent);
+    store.playlists.forEach(pl => {
+      if (!pl || !Array.isArray(pl.tracks)) return;
+      pl.tracks = clean(pl.tracks);
+    });
+
+    if (legacy(player.currentId)) {
+      player.currentId = null;
+      player.queue = [];
+      player.pos = -1;
+      changed = true;
+    }
+    if (Array.isArray(player.queue)) {
+      player.queue = clean(player.queue);
+      if (player.currentId) {
+        const index = player.queue.indexOf(player.currentId);
+        player.pos = index === -1 ? 0 : index;
+      }
+    }
+
+    likedSet.clear();
+    store.likes.forEach(id => likedSet.add(id));
+
+    /* faixa aberta guardada neste aparelho: nunca volta a ser demo/local */
+    try {
+      const key = nowKey();
+      const raw = key ? localStorage.getItem(key) : '';
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved && legacy(saved.currentId) && !saved.yt) {
+          localStorage.removeItem(key);
+        } else if (saved && Array.isArray(saved.queue)) {
+          saved.queue = clean(saved.queue);
+          localStorage.setItem(key, JSON.stringify(saved));
+        }
+      }
+    } catch (err) {}
+
+    return changed;
   }
 
   /* tira da biblioteca os vídeos que pertenciam à conta anterior */
@@ -338,6 +412,9 @@
     player.shuffle = !!store.prefs.shuffle;
     player.repeat = store.prefs.repeat === 'all' || store.prefs.repeat === 'one' ? store.prefs.repeat : 'off';
 
+    /* bibliotecas antigas podem ter faixas de demonstração: remove-as já */
+    purgeLegacyTracks();
+
     /* sem cópia rápida no localStorage, a biblioteca vem da base de dados */
     if (!raw && accountId && window.OndaDB) {
       window.OndaDB.loadLibrary(accountId).then(lib => {
@@ -360,6 +437,7 @@
         store.likes.forEach(id => likedSet.add(id));
         player.shuffle = !!store.prefs.shuffle;
         player.repeat = store.prefs.repeat === 'all' || store.prefs.repeat === 'one' ? store.prefs.repeat : 'off';
+        purgeLegacyTracks();
         render();
       }).catch(() => {});
     }
@@ -863,6 +941,9 @@
   const metaInFlight = new Set();
   let metaQueue = [];
   let metaActive = 0;
+  const ytDurPending = new Set();
+  const ytDurInFlight = new Set();
+  let ytDurTimer = 0;
 
   let route = { name: 'home' };
   const stack = [];
@@ -1024,7 +1105,7 @@
     }
   }
 
-  /* catálogo, arquivos locais e os vídeos salvos na conta */
+  /* catálogo (vazio) e os vídeos salvos na conta */
 
   /* --------------------------- utilitários --------------------------- */
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -1129,8 +1210,6 @@
   const backBtn = $('#btn-back');
   const menuToggleBtn = $('#btn-menu');
   const createPlaylistBtn = $('#btn-create-playlist');
-  const addFilesBtn = $('#btn-add-files');
-  const fileInput = $('#file-input');
   const sidebarEl = $('#sidebar');
 
   const npBlock = $('.np');
@@ -1186,13 +1265,86 @@
   }
 
   function queueDurations(ids) {
+    const ytVideoIds = [];
     ids.forEach(id => {
       const track = trackById.get(id);
-      /* a duração do YouTube vem do player, não de uma tag de áudio */
-      if (track && track.yt) return;
+      if (!track) return;
+      if (track.yt) {
+        /* a duração do YouTube vem da API (ou do player, quando já tocou) */
+        if (!metaCache.has(id) && track.videoId) ytVideoIds.push(track.videoId);
+        return;
+      }
       if (!metaCache.has(id) && !metaInFlight.has(id) && metaQueue.indexOf(id) === -1) metaQueue.push(id);
     });
+    if (ytVideoIds.length) queueYtDurations(ytVideoIds);
     pumpMeta();
+  }
+
+  function parseMediaDuration(value) {
+    const match = /^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(String(value || ''));
+    if (!match) return 0;
+    return (Number(match[1]) || 0) * 86400 + (Number(match[2]) || 0) * 3600 +
+      (Number(match[3]) || 0) * 60 + (Number(match[4]) || 0);
+  }
+
+  function queueYtDurations(videoIds) {
+    if (!ytKey) return;
+    (videoIds || []).forEach(videoId => {
+      if (!videoId) return;
+      if (metaCache.has(ytTrackId(videoId)) || ytDurInFlight.has(videoId)) return;
+      ytDurPending.add(videoId);
+    });
+    if (!ytDurPending.size) return;
+    clearTimeout(ytDurTimer);
+    /* espera pelo fim do render para pedir todas as durações de uma vez */
+    ytDurTimer = setTimeout(flushYtDurations, 250);
+  }
+
+  function flushYtDurations() {
+    ytDurTimer = 0;
+    if (!ytKey) return;
+
+    const videoIds = Array.from(ytDurPending).slice(0, 50);
+    videoIds.forEach(videoId => {
+      ytDurPending.delete(videoId);
+      ytDurInFlight.add(videoId);
+    });
+    if (!videoIds.length) return;
+
+    const params = new URLSearchParams({
+      part: 'contentDetails',
+      id: videoIds.join(','),
+      key: ytKey
+    });
+
+    fetch('https://www.googleapis.com/youtube/v3/videos?' + params.toString())
+      .then(response => response.json())
+      .then(data => {
+        const items = data && Array.isArray(data.items) ? data.items : [];
+        let changed = false;
+        items.forEach(item => {
+          if (!item || !item.id) return;
+          const seconds = parseMediaDuration(item.contentDetails && item.contentDetails.duration);
+          if (!seconds) return;
+          const id = ytTrackId(item.id);
+          const track = trackById.get(id);
+          if (!track) return;
+          metaCache.set(id, seconds);
+          if (track.duration !== seconds) {
+            track.duration = seconds;
+            changed = true;
+          }
+          paintDuration(id, seconds);
+        });
+        if (changed) persistYtTracks();
+        if (ytDurPending.size) queueYtDurations([]);
+      })
+      .catch(() => {
+        /* sem rede/cota: as durações são tentadas outra vez na próxima vista */
+      })
+      .finally(() => {
+        videoIds.forEach(videoId => ytDurInFlight.delete(videoId));
+      });
   }
 
   function pumpMeta() {
@@ -1264,7 +1416,7 @@
     if (!track) return '';
     const isPlaying = player.currentId === id;
     const isLiked = likedSet.has(id);
-    const dur = metaCache.get(id);
+    const dur = metaCache.get(id) || track.duration || 0;
     const options = opts || {};
 
     return '<div class="row' + (isPlaying ? ' playing' : '') + '" data-track-id="' + track.id +
@@ -1312,23 +1464,33 @@
   }
 
   function homeHTML() {
-    const hour = new Date().getHours();
-    const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+    const top = topTrackIds(3).map(id => trackById.get(id)).filter(Boolean);
 
-    const quick = [{ liked: true, title: 'Músicas Curtidas', colors: LIKED_COLORS }].concat(
-      store.playlists.slice(0, 5).map(p => ({ id: p.id, title: p.name, colors: plColors(p) }))
-    );
+    /* a página inicial mostra as músicas mais ouvidas em vez das playlists:
+       as contagens sobem a cada reprodução e os azulejos mudam sozinhos */
+    const quick = [{ liked: true, title: 'Músicas Curtidas', colors: LIKED_COLORS }]
+      .concat(top.map(track => ({ track })));
 
-    const tiles = quick.map(item => (
-      '<div class="tile" role="button" tabindex="0" ' +
-        (item.liked ? 'data-open-liked' : 'data-open-playlist="' + item.id + '"') + '>' +
-        coverHTML(item.title, item.colors, '', item.liked ? ICONS.heartFilled : '') +
-        '<span class="tile-name">' + esc(item.title) + '</span>' +
-        '<button class="tile-play" data-act="quick-play" data-kind="' + (item.liked ? 'liked' : 'playlist') +
-          '" data-id="' + (item.liked ? '' : item.id) + '" aria-label="Tocar ' + esc(item.title) + '">' +
+    const tiles = quick.map(item => {
+      const track = item.track || null;
+      const title = track ? track.title : item.title;
+      const cover = track
+        ? coverFor(track)
+        : coverHTML(item.title, item.colors, '', item.liked ? ICONS.heartFilled : '');
+      const open = track ? 'data-play-track="' + track.id + '"' : 'data-open-liked';
+      const kind = track ? 'track' : 'liked';
+      const playId = track ? track.id : '';
+      return '<div class="tile" role="button" tabindex="0" title="' + esc(title) + '" ' + open + '>' +
+        cover +
+        '<span class="tile-text">' +
+          '<span class="tile-name">' + esc(title) + '</span>' +
+          (track ? '<span class="tile-artist">' + esc(track.artist) + '</span>' : '') +
+        '</span>' +
+        '<button class="tile-play" data-act="quick-play" data-kind="' + kind +
+          '" data-id="' + playId + '" aria-label="Tocar ' + esc(title) + '">' +
           ICONS.play + '</button>' +
-      '</div>'
-    )).join('');
+      '</div>';
+    }).join('');
 
     const cards = albums.map(album => (
       '<div class="card" role="button" tabindex="0" data-open-album="' + album.id + '">' +
@@ -1341,22 +1503,15 @@
       '</div>'
     )).join('');
 
-    const localSection = localTracks.length
-      ? sectionHTML('Suas músicas do computador', trackListHTML(localTracks.map(t => t.id)))
-      : '';
     const albumSection = albums.length
       ? sectionHTML('Feito para você', '<div class="cards">' + cards + '</div>')
       : '';
     const saved = allIds();
     const savedSection = saved.length ? sectionHTML('Músicas salvas', trackListHTML(saved)) : '';
 
-    return '<div class="home-top"><h1>' + greeting + '</h1><div class="tiles">' + tiles + '</div></div>' +
+    return '<div class="home-top"><h1>Músicas mais ouvidas</h1><div class="tiles">' + tiles + '</div></div>' +
       albumSection +
-      localSection +
-      savedSection +
-      '<div class="note"><strong>Músicas:</strong> pesquise na barra acima — os resultados do YouTube aparecem ' +
-        'sozinhos. Toque num resultado e ele toca no player do app, com capa e controlos na barra de baixo e no ' +
-        'painel “a tocar”. Arquivos do seu computador entram em “Minhas músicas”.</div>';
+      savedSection;
   }
 
   function albumHTML(id) {
@@ -1544,8 +1699,7 @@
 
     const fileNote = isFileProtocol()
       ? '<p class="yt-note">Vídeos do YouTube não tocam com o app aberto por <code>file://</code> (erro 153). ' +
-        'Rode <strong>iniciar.bat</strong> e abra <code>http://localhost:8080</code>. Para ouvir sem internet, ' +
-        'baixe o áudio no seu PC e importe em “Minhas músicas”.</p>'
+        'Rode <strong>iniciar.bat</strong> e abra <code>http://localhost:8080</code>.</p>'
       : '';
 
     let body;
@@ -1588,9 +1742,11 @@
       album: 'YouTube',
       colors: YT_COLORS,
       thumb: record.thumb || ytThumb(record.videoId),
+      duration: Math.max(0, Number(record.duration) || 0),
       src: '',
       yt: true
     };
+    if (track.duration) metaCache.set(id, track.duration);
     ytTracks.push(track);
     trackById.set(id, track);
     return track;
@@ -1605,7 +1761,8 @@
       videoId: track.videoId,
       title: track.title,
       artist: track.artist,
-      thumb: track.thumb
+      thumb: track.thumb,
+      duration: track.duration || metaCache.get(track.id) || 0
     }));
     save();
   }
@@ -1915,7 +2072,7 @@
       });
   }
 
-  /* ---------------------- músicas do computador ---------------------- */
+  /* ------------- limpeza de ficheiros locais antigos ------------- */
   const LOCAL_DB = 'onda-local-db';
   const LOCAL_STORE = 'files';
   let localDbPromise = null;
@@ -1946,107 +2103,6 @@
       tx.onerror = () => reject(tx.error || new Error('Falha no banco local'));
       tx.onabort = () => reject(tx.error || new Error('Falha no banco local'));
     }));
-  }
-
-  function registerLocalTrack(record) {
-    if (!record || !record.id || !record.blob) return null;
-    if (trackById.has(record.id)) return trackById.get(record.id);
-    const track = {
-      id: record.id,
-      title: record.title || 'Música local',
-      artist: record.artist || 'Arquivo local',
-      album: record.album || 'Minhas músicas',
-      colors: LOCAL_COLORS,
-      src: URL.createObjectURL(record.blob),
-      local: true
-    };
-    localTracks.push(track);
-    trackById.set(track.id, track);
-    return track;
-  }
-
-  function openFilePicker() {
-    if (!fileInput) return;
-    fileInput.value = '';
-    fileInput.click();
-  }
-
-  function localFileInfo(file) {
-    const name = String(file.name || 'Música local').replace(/\.[^.]+$/, '');
-    const parts = name.split(' - ');
-    if (parts.length >= 2) {
-      return {
-        artist: parts[0].trim() || 'Arquivo local',
-        title: parts.slice(1).join(' - ').trim() || name
-      };
-    }
-    return { artist: 'Arquivo local', title: name };
-  }
-
-  function addLocalFiles(fileList) {
-    const files = Array.prototype.slice.call(fileList || []).filter(file => (
-      (file.type && file.type.indexOf('audio/') === 0) ||
-      /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|webm)$/i.test(file.name)
-    ));
-
-    if (!files.length) {
-      toast('Nenhum arquivo de áudio encontrado. Use mp3, m4a, ogg, wav ou flac.');
-      return;
-    }
-
-    const records = files.map(file => {
-      const info = localFileInfo(file);
-      return {
-        id: 'loc-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
-        title: info.title,
-        artist: info.artist,
-        album: 'Minhas músicas',
-        addedAt: Date.now(),
-        blob: file
-      };
-    });
-
-    records.forEach(registerLocalTrack);
-    render();
-    toast(records.length === 1 ? 'Música adicionada' : records.length + ' músicas adicionadas');
-
-    Promise.allSettled(records.map(record => localStore('readwrite', objectStore => objectStore.put(record))))
-      .then(results => {
-        if (results.some(result => result.status === 'rejected')) {
-          toast('As músicas tocam agora, mas o navegador não deixou salvá-las para a próxima vez.');
-        }
-      });
-  }
-
-  function removeLocalTrack(id) {
-    const track = trackById.get(id);
-    if (!track || !track.local) return;
-
-    if (player.currentId === id) {
-      audio.pause();
-      audio.removeAttribute('src');
-      player.currentId = null;
-      player.queue = [];
-      player.pos = -1;
-      setPlayIcon(false);
-      updateProgress();
-    }
-
-    URL.revokeObjectURL(track.src);
-    trackById.delete(id);
-    const index = localTracks.findIndex(item => item.id === id);
-    if (index !== -1) localTracks.splice(index, 1);
-
-    store.playlists.forEach(playlist => {
-      playlist.tracks = playlist.tracks.filter(trackId => trackId !== id);
-    });
-    if (likedSet.delete(id)) store.likes = Array.from(likedSet);
-    store.recent = store.recent.filter(trackId => trackId !== id);
-    save();
-
-    localStore('readwrite', objectStore => objectStore.delete(id)).catch(() => {});
-    render();
-    toast('Música removida');
   }
 
   function historyHTML() {
@@ -2157,7 +2213,6 @@
     const nome = account ? account.name || account.email || 'Sem conta' : 'Sem conta';
     const avatar = account && account.avatar ? account.avatar : '';
     const playlists = store.playlists.length;
-    const locals = localTracks.length;
     const likes = likedTrackIds().length;
 
     return heroHTML({
@@ -2178,25 +2233,7 @@
           stat(likes, likes === 1 ? 'música curtida' : 'músicas curtidas') +
           stat(playlists, playlists === 1 ? 'playlist' : 'playlists') +
           stat(store.recent.length, 'no histórico') +
-          stat(locals, locals === 1 ? 'arquivo local' : 'arquivos locais') +
         '</div>'
-    });
-  }
-
-  function localHTML() {
-    const ids = localTracks.map(track => track.id);
-    return heroHTML({
-      colors: LOCAL_COLORS,
-      coverTitle: 'Minhas músicas',
-      type: 'Do computador',
-      title: 'Minhas músicas',
-      subtitle: ids.length + (ids.length === 1 ? ' música' : ' músicas') + ' neste navegador',
-      actions:
-        '<button class="play-fab" data-act="play-local" aria-label="Tocar minhas músicas">' + ICONS.play + '</button>' +
-        '<button class="btn" data-act="add-files">' + ICONS.upload + '<span>Adicionar músicas</span></button>',
-      body: trackListHTML(ids, {
-        empty: 'Nenhuma música local ainda. Clique em “Adicionar músicas” e escolha os arquivos de áudio do seu computador.'
-      })
     });
   }
 
@@ -2209,7 +2246,6 @@
     if (route.name === 'album') return albumHTML(route.id);
     if (route.name === 'playlist') return playlistHTML(route.id);
     if (route.name === 'liked') return likedHTML();
-    if (route.name === 'local') return localHTML();
     if (route.name === 'history') return historyHTML();
     if (route.name === 'profile') return profileHTML();
     if (route.name === 'search') return searchHTML(route.q);
@@ -2237,11 +2273,6 @@
         coverHTML('Músicas Curtidas', LIKED_COLORS, 'lib-cover', ICONS.heartFilled) +
         '<span class="lib-text"><span class="lib-name">Músicas Curtidas</span>' +
         '<span class="lib-sub">' + likedCount + (likedCount === 1 ? ' música' : ' músicas') + '</span></span>' +
-      '</button>',
-      '<button class="lib-item' + (route.name === 'local' ? ' active' : '') + '" data-open-local>' +
-        coverHTML('Minhas músicas', LOCAL_COLORS, 'lib-cover') +
-        '<span class="lib-text"><span class="lib-name">Minhas músicas</span>' +
-        '<span class="lib-sub">' + localTracks.length + (localTracks.length === 1 ? ' arquivo' : ' arquivos') + '</span></span>' +
       '</button>',
     ].concat(store.playlists.map(pl => (
       '<button class="lib-item' + (route.name === 'playlist' && route.id === pl.id ? ' active' : '') +
@@ -2300,6 +2331,11 @@
 
       if (yt.playing.trackId && dur && metaCache.get(yt.playing.trackId) !== dur) {
         metaCache.set(yt.playing.trackId, dur);
+        const track = trackById.get(yt.playing.trackId);
+        if (track && track.duration !== dur) {
+          track.duration = dur;
+          persistYtTracks();
+        }
         paintDuration(yt.playing.trackId, dur);
       }
       return;
@@ -3007,11 +3043,37 @@
 
   function pushRecent(id) {
     store.recent = [id].concat(store.recent.filter(x => x !== id)).slice(0, 100);
+    /* conta as vezes que cada música começou a tocar: serve para a lista
+       “Músicas mais ouvidas” da página inicial */
+    store.plays[id] = (Number(store.plays[id]) || 0) + 1;
     save();
   }
 
   function historyIds() {
     return store.recent.filter(id => trackById.has(id));
+  }
+
+  /* as 3 (ou N) músicas com mais reproduções; se ainda não houver contagem
+     suficiente, completa com o histórico mais recente */
+  function topTrackIds(limit) {
+    const counts = store.plays || {};
+    const ranked = Object.keys(counts)
+      .filter(id => trackById.has(id) && (Number(counts[id]) || 0) > 0)
+      .sort((a, b) => {
+        const diff = (Number(counts[b]) || 0) - (Number(counts[a]) || 0);
+        if (diff) return diff;
+        const ra = store.recent.indexOf(a);
+        const rb = store.recent.indexOf(b);
+        return (ra === -1 ? 999 : ra) - (rb === -1 ? 999 : rb);
+      })
+      .slice(0, limit);
+
+    if (ranked.length < limit) {
+      store.recent.concat(allIds()).forEach(id => {
+        if (ranked.length < limit && trackById.has(id) && ranked.indexOf(id) === -1) ranked.push(id);
+      });
+    }
+    return ranked;
   }
 
   function pushSearch(term) {
@@ -3365,23 +3427,24 @@
     if (!track) return;
     menuTrackId = trackId;
 
-    const isLiked = likedSet.has(trackId);
-    const items = [
-      '<button class="menu-item" data-menu="like">' +
-        (isLiked ? ICONS.heartFilled : ICONS.heart) +
-        '<span>' + (isLiked ? 'Remover dos favoritos' : 'Adicionar aos favoritos') + '</span></button>'
-    ];
+    const items = [];
 
-    if (route.name === 'playlist') {
-      items.push('<button class="menu-item" data-menu="remove">' + ICONS.trash +
-        '<span>Remover desta playlist</span></button>');
-    }
-    if (track.local) {
-      items.push('<button class="menu-item" data-menu="remove-file">' + ICONS.trash +
-        '<span>Remover do computador</span></button>');
-    }
-
+    /* cabeçalho do menu: miniatura, nome e cantor da música cujos três
+       pontos foram clicados */
+    const thumb = track.thumb || (track.videoId
+      ? 'https://i.ytimg.com/vi/' + track.videoId + '/mqdefault.jpg'
+      : '');
+    items.push('<div class="menu-track">' +
+      '<span class="menu-track-cover"' +
+        (thumb ? ' style="background-image:url(\'' + esc(thumb) + '\')"' : '') +
+      '></span>' +
+      '<span class="menu-track-text">' +
+        '<span class="menu-track-title">' + esc(track.title) + '</span>' +
+        '<span class="menu-track-artist">' + esc(track.artist) + '</span>' +
+      '</span>' +
+    '</div>');
     items.push('<div class="menu-sep"></div>');
+
     items.push('<div class="menu-label">Adicionar a playlist</div>');
     store.playlists.forEach(pl => {
       items.push('<button class="menu-item" data-menu="add" data-pl="' + pl.id + '">' + ICONS.plus +
@@ -3408,12 +3471,9 @@
   }
 
   function closeMenu() {
-    const trackId = menuTrackId;
     menuEl.classList.remove('open');
     menuEl.innerHTML = '';
     menuTrackId = null;
-    /* vídeo do YouTube aberto no menu mas não salvo em nada não fica ocupando espaço */
-    if (trackId) dropOrphanYtTrack(trackId);
   }
 
   /* ----------------------------- modal ----------------------------- */
@@ -3620,14 +3680,12 @@
       if (action === 'quick-play') {
         if (actBtn.dataset.kind === 'liked') {
           playAll(likedTrackIds(), 'liked');
+        } else if (actBtn.dataset.kind === 'track') {
+          play(actBtn.dataset.id, topTrackIds(3), 'top');
         } else {
           const pl = getPlaylist(actBtn.dataset.id);
           playAll(playlistTrackIds(pl), 'playlist', pl ? pl.name : '');
         }
-        return;
-      }
-      if (action === 'play-local') {
-        playAll(localTracks.map(t => t.id), 'local');
         return;
       }
       if (action === 'play-history') {
@@ -3636,10 +3694,6 @@
       }
       if (action === 'clear-history') {
         clearHistory();
-        return;
-      }
-      if (action === 'add-files') {
-        openFilePicker();
         return;
       }
       if (action === 'create-playlist') {
@@ -3674,6 +3728,9 @@
 
     const openPlaylist = event.target.closest('[data-open-playlist]');
     if (openPlaylist) { navigate({ name: 'playlist', id: openPlaylist.dataset.openPlaylist }); return; }
+
+    const topTile = event.target.closest('[data-play-track]');
+    if (topTile) { play(topTile.dataset.playTrack, topTrackIds(3), 'top'); return; }
 
     if (event.target.closest('[data-open-liked]')) { navigate({ name: 'liked' }); return; }
 
@@ -3731,11 +3788,6 @@
     });
 
     createPlaylistBtn.addEventListener('click', () => openCreatePlaylist([]));
-    addFilesBtn.addEventListener('click', openFilePicker);
-    fileInput.addEventListener('change', () => {
-      addLocalFiles(fileInput.files);
-      fileInput.value = '';
-    });
 
     searchInput.addEventListener('input', () => {
       const q = searchInput.value.trim();
@@ -3758,11 +3810,6 @@
       if (event.target.closest('[data-open-liked]')) {
         searchInput.value = '';
         navigate({ name: 'liked' });
-        return;
-      }
-      if (event.target.closest('[data-open-local]')) {
-        searchInput.value = '';
-        navigate({ name: 'local' });
         return;
       }
       const pl = event.target.closest('[data-open-playlist]');
@@ -3818,7 +3865,7 @@
         if (event.target.closest('#np-panel-next')) { nextTrack(false); return; }
         if (event.target.closest('#np-panel-shuffle')) { toggleShuffle(); return; }
         if (event.target.closest('#np-panel-repeat')) { cycleRepeat(); return; }
-        if (event.target.closest('#np-panel-queue')) { closeNowPlaying(); toggleQueue(); return; }
+        if (event.target.closest('#np-panel-queue')) { toggleQueue(); return; }
         if (event.target.closest('#np-panel-like')) { likeNowPlaying(); return; }
         const addBtn = event.target.closest('[data-np-add]');
         if (addBtn) addNowPlaying(addBtn);
@@ -3836,11 +3883,15 @@
       if (npView === 'video' && npPanelOpen() && yt.playing) positionYtStageOverPanel();
     });
 
-    /* clicar fora do painel “a tocar” fecha-o */
+    /* clicar fora do painel “a tocar” fecha-o — exceto quando o clique é para
+       o menu de playlists, a fila ou um modal que nasceram dele */
     document.addEventListener('click', event => {
       if (!npPanelOpen()) return;
       if (event.target.closest('#np-panel') || event.target.closest('.np')) return;
-      if (npPanelOpen() && event.target.closest('#yt-stage')) return;
+      if (event.target.closest('#yt-stage')) return;
+      if (event.target.closest('#menu') || event.target.closest('#queue') ||
+        event.target.closest('#modal-root') || event.target.closest('#btn-queue') ||
+        event.target.closest('[data-act="more"]') || event.target.closest('[data-yt-save]')) return;
       closeNowPlaying();
     });
 
@@ -4056,10 +4107,7 @@
       const action = btn.dataset.menu;
       const trackId = menuTrackId;
 
-      if (action === 'like' && trackId) toggleLike(trackId);
-      if (action === 'remove' && trackId) removeFromCurrentPlaylist(trackId);
-      if (action === 'remove-file' && trackId) removeLocalTrack(trackId);
-      if (action === 'add' && trackId) addToPlaylist(btn.dataset.pl, trackId);
+      if (action === 'add' && trackId) { addToPlaylist(btn.dataset.pl, trackId); return; }
       if (action === 'newpl' && trackId) {
         /* o utilizador é que escolhe o nome: abre o formulário com a música
            já selecionada, em vez de criar uma lista automática */
@@ -4251,15 +4299,9 @@
       if (added > 0 && !isLoggedIn() && document.getElementById('auth')) showAuth('login');
     }).catch(() => {});
 
-    localStore('readonly', objectStore => objectStore.getAll())
-      .then(records => {
-        if (!Array.isArray(records) || !records.length) return;
-        records
-          .sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0))
-          .forEach(registerLocalTrack);
-        render();
-      })
-      .catch(() => {});
+    /* a secção "Minhas músicas" foi removida: apaga ficheiros antigos do
+       IndexedDB para a biblioteca ficar 100% YouTube */
+    localStore('readwrite', objectStore => objectStore.clear()).catch(() => {});
   }
 
   if (document.readyState === 'loading') {

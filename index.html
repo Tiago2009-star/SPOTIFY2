@@ -6,20 +6,22 @@
   <meta name="theme-color" content="#000000">
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Onda — sua música</title>
-  <meta name="description" content="Onda: player de música no navegador com catálogo, playlists, favoritos, arquivos do seu computador e busca no YouTube.">
+  <meta name="description" content="Onda: player de música no navegador — músicas do YouTube, playlists e favoritos, sincronizados entre aparelhos.">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Onda — sua música">
-  <meta property="og:description" content="Player de música no navegador: playlists, favoritos e músicas do computador.">
+  <meta property="og:description" content="Player de música no navegador com músicas do YouTube, playlists e favoritos.">
   <meta property="og:locale" content="pt_BR">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Onda — sua música">
-  <meta name="twitter:description" content="Player de música no navegador: playlists, favoritos e músicas do computador.">
-  <link rel="preconnect" href="https://www.soundhelix.com" crossorigin>
+  <meta name="twitter:description" content="Player de música no navegador com músicas do YouTube, playlists e favoritos.">
   <link rel="preconnect" href="https://www.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://i.ytimg.com" crossorigin>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%231ed760'/%3E%3Cpath d='M22 55c8-10 16-10 24 0s16 10 24 0' fill='none' stroke='%23000' stroke-width='8' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=55">
+  <link rel="stylesheet" href="styles.css?v=74">
 </head>
 <body>
   <a class="skip-link" href="#main">Pular para o conteúdo</a>
@@ -52,9 +54,6 @@
         <div class="lib-head">
           <span class="lib-title">Sua biblioteca</span>
           <div class="lib-head-actions">
-            <button type="button" class="icon-btn" id="btn-add-files" aria-label="Adicionar músicas do computador" title="Adicionar músicas do computador">
-              <span class="ico" data-ico="upload" aria-hidden="true"></span>
-            </button>
             <button type="button" class="icon-btn" id="btn-create-playlist" aria-label="Criar playlist" title="Criar playlist">
               <span class="ico" data-ico="plus" aria-hidden="true"></span>
             </button>
@@ -226,7 +225,7 @@
 
   <aside class="queue" id="queue" aria-label="Fila de reprodução"></aside>
   <div class="yt-engine" id="yt-stage" aria-hidden="true"></div>
-  <input type="file" id="file-input" accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac" multiple hidden>
+
   <div class="menu" id="menu" role="menu" aria-label="Opções da música"></div>
   <div class="modal-root" id="modal-root"></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -272,7 +271,7 @@
         var script = document.createElement('script');
         if (useModule) script.type = 'module';
         /* versão na URL evita que o navegador rode uma cópia antiga do app */
-        script.src = path + '?v=55';
+        script.src = path + '?v=74';
         script.onload = done;
         script.onerror = function () {
           if (path.indexOf('js/') !== 0) { fail(); return; }

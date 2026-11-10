@@ -539,10 +539,23 @@ input { font: inherit; }
 }
 .tile:hover { background: rgba(255, 255, 255, .16); }
 .tile .cover { width: 62px; height: 62px; flex: 0 0 auto; }
+.tile-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 44px;
+}
 .tile-name {
   font-size: 14px;
   font-weight: 700;
-  padding-right: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile-artist {
+  font-size: 12px;
+  color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -720,10 +733,16 @@ input { font: inherit; }
 
 .row.focus { background: rgba(30, 215, 96, .14); box-shadow: inset 0 0 0 1px rgba(30, 215, 96, .35); }
 
-.row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.row-actions { display: flex; align-items: center; justify-content: flex-start; gap: 2px; margin-left: 10px; }
 .row-actions .icon-btn { width: 30px; height: 30px; }
 .row-actions .icon-btn .ico { width: 16px; height: 16px; }
-.row .heart-btn { opacity: 0; }
+.row-actions [data-act="more"] { margin-left: auto; color: #fff; }
+.row-actions [data-act="more"]:hover { color: #fff; }
+/* os ícones inseridos nas linhas não têm a moldura .ico: sem isto o SVG
+   ficaria com o preenchimento preto por omissão */
+.row-actions [data-act="more"] svg { fill: currentColor; }
+.heart-btn.liked svg { fill: currentColor; }
+.row .heart-btn { opacity: 1; color: #cfcfcf; }
 .row:hover .heart-btn, .row .heart-btn.liked { opacity: 1; }
 .heart-btn.liked { color: var(--green); }
 
@@ -941,7 +960,7 @@ input { font: inherit; }
 }
 
 .np { display: flex; align-items: center; gap: 12px; min-width: 0; }
-/* clicar na música leva à faixa (álbum, arquivo local ou vídeo do YouTube) */
+/* clicar na música leva à faixa (álbum ou vídeo do YouTube) */
 .np-cover, .np-text { cursor: pointer; }
 .np-text:hover .np-title { text-decoration: underline; }
 .np-cover:hover { filter: brightness(1.08); }
@@ -1229,6 +1248,42 @@ input { font: inherit; }
 .menu-item > svg { width: 16px; height: 16px; flex: 0 0 auto; fill: currentColor; }
 .menu-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-sep { height: 1px; background: rgba(255, 255, 255, .12); margin: 6px 4px; }
+.menu-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px 9px;
+}
+.menu-track-cover {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, .08);
+  background-size: cover;
+  background-position: center;
+}
+.menu-track-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-track-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-track-artist {
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .menu-label {
   padding: 4px 10px 6px;
   font-size: 10px;
@@ -1481,14 +1536,15 @@ body::-webkit-scrollbar,
   .note { margin-left: 18px; margin-right: 18px; }
   .tiles { grid-template-columns: 1fr 1fr; }
   .tile .cover { width: 52px; height: 52px; }
-  .tile-name { font-size: 12px; padding-right: 8px; }
+  .tile-name { font-size: 12px; }
+  .tile-text { padding-right: 8px; }
   .tile-play { display: none; }
   .cards { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
   .row, .tracklist-head { grid-template-columns: 20px minmax(0, 1fr) 64px; gap: 10px; padding: 8px; }
   .row [data-act="remove"] { display: none; }
   .row-album, .row-dur, .tracklist-head .col-album, .tracklist-head .col-time { display: none; }
   .row-cover { display: none; }
-  .row-actions { gap: 0; }
+  .row-actions { gap: 0; margin-left: 0; }
   .row .heart-btn { opacity: 1; }
 
   .player {

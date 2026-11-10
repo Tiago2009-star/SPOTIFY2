@@ -27,15 +27,15 @@ Depois abra `http://localhost:8080` (`http://localhost:3000` no `npx serve`).
 
 ## Sobre o catálogo de músicas
 
-O app **não** distribui o catálogo do Spotify: as músicas do Spotify são licenciadas
-e só podem ser tocadas pela API oficial (Spotify Web API + conta Premium). Este app
-toca arquivos de áudio por URL, então o catálogo padrão usa 16 **faixas de
-demonstração royalty-free** do [SoundHelix](https://www.soundhelix.com/audio-examples),
-transmitidas direto do site deles. Para ouvir, é preciso estar conectado à internet.
+O app é **só YouTube**: a música vem da busca do YouTube (vídeo + áudio tocados
+pelo player do app). Não há faixas de demonstração embutidas nem importação de
+arquivos locais — `js/catalog.js` está vazio de propósito, para a biblioteca
+mostrar apenas o que é do YouTube.
 
 ### Adicionar suas músicas
 
-Edite `js/catalog.js` e crie um álbum com suas faixas:
+Se quiser voltar a ter um catálogo fixo, edite `js/catalog.js` e crie um álbum
+com as suas faixas:
 
 ```js
 {
@@ -104,8 +104,7 @@ ou botão “Abrir no YouTube”, nem interface do YouTube para tocar.
 
 Ainda assim, quem manda no player é o YouTube: em alguns telemóveis o
 carregamento do vídeo pode abrir a app do YouTube, e **o áudio do YouTube não
-continua com o ecrã desligado**. Para ouvir em segundo plano, importe o áudio
-como arquivo em “Minhas músicas” (ou aponte o `src` no `js/catalog.js`).
+continua com o ecrã desligado**.
 
 ## Nuvem (Firebase)
 
@@ -197,5 +196,5 @@ arrancar sem esperar pela base de dados; se essa cópia desaparecer, a bibliotec
 
 Limitações: a base de dados é **local ao navegador** — não sincroniza entre
 telemóvel e PC (para isso seria preciso um serviço de autenticação e base de
-dados na nuvem, com conta e chaves próprias) — e os arquivos importados em
-“Minhas músicas” ficam no IndexedDB deste aparelho.
+dados na nuvem, com conta e chaves próprias). A antiga secção de arquivos locais
+(“Minhas músicas”) foi removida.

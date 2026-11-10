@@ -228,6 +228,7 @@ import {
           playlists: results[1] || [],
           likes: Array.isArray(profile.likes) ? profile.likes : [],
           recent: Array.isArray(profile.recent) ? profile.recent : [],
+          plays: profile.plays && typeof profile.plays === 'object' ? profile.plays : {},
           searches: Array.isArray(profile.searches) ? profile.searches : [],
           ytTracks: Array.isArray(profile.ytTracks) ? profile.ytTracks : [],
           prefs: profile.prefs || {}
@@ -239,6 +240,7 @@ import {
       return saveProfile(uid, {
         likes: store.likes || [],
         recent: (store.recent || []).slice(0, 60),
+        plays: store.plays || {},
         searches: store.searches || [],
         ytTracks: store.ytTracks || [],
         prefs: store.prefs || {}
