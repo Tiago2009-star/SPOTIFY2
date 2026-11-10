@@ -960,7 +960,9 @@
     player: null, ready: false, state: -1, apiRequested: false,
     volume: typeof store.prefs.volume === 'number' ? clamp(store.prefs.volume, 0, 1) : 0.8,
     muted: false,
-    restore: null, restoring: false
+    restore: null, restoring: false,
+    /* controlo do "não pares quando a app sai do ecrã" (ver onYtState) */
+    userPaused: false, backgroundRetries: 0
   };
   let ytTimer = 0;
   let ytRequestId = 0;
@@ -1632,8 +1634,8 @@
     if (!yt.playing) return '';
     const videoId = encodeURIComponent(yt.playing.id);
 
-    /* só áudio: o player do YouTube roda em #yt-stage, fora da tela e fora
-       da view, para continuar tocando quando a tela é redesenhada */
+    /* só áudio: o player do YouTube roda em #yt-stage, pequeno e dentro do
+       ecrã, para o telemóvel não o suspender em segundo plano */
     const engine = isFileProtocol()
       ? '<div class="yt-blocked">' +
           '<strong>Este áudio não toca com o app aberto por file://</strong>' +
@@ -1922,10 +1924,29 @@
     if (event.data === states.ENDED) nextTrack(true);
 
     if (event.data === states.PLAYING) {
+      yt.userPaused = false;
+      yt.backgroundRetries = 0;
       startYtTick();
     } else {
       cancelAnimationFrame(ytRafId);
       ytRafId = 0;
+    }
+
+    /* O browser do telemóvel pausa o player quando a app passa para segundo
+       plano. Insiste-se no play algumas vezes — mas nunca contra um pause
+       pedido pelo utilizador (botão, aviso do sistema ou ecrã de bloqueio). */
+    if (event.data === states.PAUSED && !yt.restoring && !yt.userPaused &&
+        document.visibilityState === 'hidden' && yt.backgroundRetries < 3) {
+      yt.backgroundRetries += 1;
+      const player = yt.player;
+      setTimeout(() => {
+        if (!player || !yt.playing || yt.player !== player) return;
+        if (yt.userPaused || document.visibilityState !== 'hidden') return;
+        let current = yt.state;
+        try { current = player.getPlayerState(); } catch (err) {}
+        if (current === 1 || current === 3) return;
+        try { player.playVideo(); } catch (err) {}
+      }, 700);
     }
 
     syncPlayIcon();
@@ -2299,6 +2320,41 @@
   function syncPlayIcon() {
     setPlayIcon(isPlayingNow());
     updateMediaSessionState();
+    syncWakeLock();
+  }
+
+  /* ---------------- ecrã ligado enquanto a música toca ----------------
+     No telemóvel, quando o ecrã apaga, o browser suspende o player do
+     YouTube e a música pára. Enquanto houver música a tocar pede-se ao
+     sistema para manter o ecrã acesso. */
+  let wakeLock = null;
+
+  function releaseWakeLock() {
+    if (!wakeLock) return;
+    const lock = wakeLock;
+    wakeLock = null;
+    try { lock.release(); } catch (err) {}
+  }
+
+  function syncWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    if (!isPlayingNow() || document.visibilityState !== 'visible') {
+      releaseWakeLock();
+      return;
+    }
+    if (wakeLock) return;
+    try {
+      navigator.wakeLock.request('screen').then(lock => {
+        if (!isPlayingNow() || document.visibilityState !== 'visible') {
+          try { lock.release(); } catch (err) {}
+          return;
+        }
+        wakeLock = lock;
+        lock.addEventListener('release', () => {
+          if (wakeLock === lock) wakeLock = null;
+        });
+      }).catch(() => {});
+    } catch (err) {}
   }
 
   /* pinta o progresso na barra e no painel “a tocar” ao mesmo tempo */
@@ -2575,6 +2631,8 @@
     stage.classList.remove('np-paused');
     stage.style.left = '';
     stage.style.top = '';
+    stage.style.right = '';
+    stage.style.bottom = '';
     stage.style.width = '';
     stage.style.height = '';
   }
@@ -2588,6 +2646,9 @@
     /* em pausa o botão de play do YouTube pode ser tocado; a tocar não,
        para um toque acidental no vídeo não parar a música */
     stage.classList.toggle('np-paused', !(yt.state === 1 || yt.state === 3));
+    /* ao sobrepor o painel, o motor deixa de usar o canto do ecrã */
+    stage.style.right = 'auto';
+    stage.style.bottom = 'auto';
     stage.style.left = rect.left + 'px';
     stage.style.top = rect.top + 'px';
     stage.style.width = rect.width + 'px';
@@ -2980,7 +3041,7 @@
 
   function render() {
     /* trocar de tela não mexe no áudio nem no vídeo: o player de YouTube vive
-       em #yt-stage (fora da view) e a música do catálogo segue no objeto audio */
+       em #yt-stage (pequeno, dentro do ecrã) e a música do catálogo segue no objeto audio */
     const ytWasPlaying = !!(yt.playing && yt.state === 1);
     const scrollTop = mainEl.scrollTop;
 
@@ -3260,8 +3321,15 @@
     if (yt.playing) {
       if (!yt.player || !yt.ready) return;
       try {
-        if (yt.state === 1 || yt.state === 3) yt.player.pauseVideo();
-        else yt.player.playVideo();
+        if (yt.state === 1 || yt.state === 3) {
+          /* pause pedido pelo utilizador: não deve ser contrariado */
+          yt.userPaused = true;
+          yt.player.pauseVideo();
+        } else {
+          yt.userPaused = false;
+          yt.backgroundRetries = 0;
+          yt.player.playVideo();
+        }
       } catch (err) {}
       return;
     }
@@ -4291,8 +4359,16 @@
     window.addEventListener('pagehide', saveNowPlaying);
     window.addEventListener('beforeunload', saveNowPlaying);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') saveNowPlaying();
-      else checkForAppUpdate();
+      if (document.visibilityState === 'hidden') {
+        /* nova saída para segundo plano: volta a poder insistir no play */
+        if (isPlayingNow()) yt.backgroundRetries = 0;
+        saveNowPlaying();
+      } else {
+        checkForAppUpdate();
+        /* o sistema larga o wake lock ao sair para segundo plano: volta a
+           pedi-lo quando a app regressa, se a música continuar a tocar */
+        syncWakeLock();
+      }
     });
 
     /* Confere se há uma versão nova quando a app volta ao ecrã. É o que faz o

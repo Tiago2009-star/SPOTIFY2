@@ -97,10 +97,12 @@ tecla, e mostra os vídeos no topo dos resultados. A chave fica em `js/config.js
 window.ONDA_CONFIG = { youtubeApiKey: 'SUA_CHAVE' };
 ```
 
-O vídeo toca no player incorporado, **fora da tela** (`#yt-stage`), com
-`controls: 0`, `fs: 0`, `playsinline: 1` e `pointer-events: none`. O app mostra
-apenas a capa, o título e o autor no painel “a tocar” — não existe nenhum link
-ou botão “Abrir no YouTube”, nem interface do YouTube para tocar.
+O vídeo toca no player incorporado, **pequeno e dentro do ecrã** (`#yt-stage`,
+320 × 180 e quase transparente), com `controls: 0`, `fs: 0`, `playsinline: 1`
+e `pointer-events: none`. Ficar dentro da área visível é o que impede o Chrome
+do Android de suspender o player quando a app passa para segundo plano. O app
+mostra apenas a capa, o título e o autor no painel “a tocar” — não existe
+nenhum link ou botão “Abrir no YouTube”, nem interface do YouTube para tocar.
 
 Ainda assim, quem manda no player é o YouTube: em alguns telemóveis o
 carregamento do vídeo pode abrir a app do YouTube, e **o áudio do YouTube não

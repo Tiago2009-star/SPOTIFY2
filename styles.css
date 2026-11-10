@@ -137,7 +137,7 @@
 
 body.locked { overflow: hidden; }
 
-/* o player do YouTube roda fora da tela: nunca deve receber toques */
+/* o player do YouTube roda quase invisível: nunca deve receber toques */
 .yt-engine { pointer-events: none; }
 .yt-engine iframe { pointer-events: none; }
 
@@ -807,15 +807,23 @@ input { font: inherit; }
 }
 
 .yt-player { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
-/* motor do player: fica fora da tela para tocar só o áudio, sem vídeo visível */
+/* motor do player: toca só o áudio, sem vídeo visível.
+   Importante: o iframe tem de continuar DENTRO do ecrã. No telemóvel o
+   Chrome suspende (pausa) os vídeos escondidos ou fora da área visível
+   quando a app passa para segundo plano. Fica pequeno, quase transparente,
+   por cima da lista e sem apanhar toques. */
 .yt-engine {
   position: fixed;
-  top: 0;
-  left: -10000px;
-  width: 640px;
-  height: 360px;
+  right: 10px;
+  bottom: 100px;
+  width: 320px;
+  height: 180px;
   overflow: hidden;
+  border-radius: 8px;
+  background: #000;
+  opacity: .012;
   pointer-events: none;
+  z-index: 3;
 }
 .yt-engine iframe { width: 100%; height: 100%; border: 0; display: block; }
 /* quando o painel mostra “Vídeo”, o mesmo iframe é apenas sobreposto à área
