@@ -329,13 +329,13 @@
   }
 
   /* ---------- limpeza: o Onda é só YouTube ----------
-     Apaga referências às 16 faixas de demonstração antigas (sh-*) e a
-     qualquer resto de catálogo nas curtidas, histórico, playlists e fila. */
+     Apaga referências a faixas que não sejam vídeos do YouTube (as antigas
+     sh-* / loc-* e qualquer sobra de catálogo). O prefixo válido é yt-. */
   function purgeLegacyTracks() {
     let changed = false;
 
-    /* restos do catálogo antigo (sh-*) e dos ficheiros locais (loc-*) */
-    const legacy = id => typeof id === 'string' && (id.indexOf('sh-') === 0 || id.indexOf('loc-') === 0);
+    /* tudo o que não for um vídeo do YouTube registado nesta conta */
+    const legacy = id => typeof id === 'string' && id.indexOf('yt-') !== 0;
     const clean = list => {
       const arr = Array.isArray(list) ? list : [];
       const out = arr.filter(id => !legacy(id));
@@ -4292,7 +4292,31 @@
     window.addEventListener('beforeunload', saveNowPlaying);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') saveNowPlaying();
+      else checkForAppUpdate();
     });
+
+    /* Confere se há uma versão nova quando a app volta ao ecrã. É o que faz o
+       telemóvel sair da versão antiga que tinha guardada em cache. */
+    let updateCheckAt = 0;
+    function checkForAppUpdate() {
+      const now = Date.now();
+      if (now - updateCheckAt < 8000) return;
+      updateCheckAt = now;
+      if (!window.fetch) return;
+
+      fetch('versao.json?t=' + now, { cache: 'no-store' })
+        .then(response => response.ok ? response.json() : null)
+        .then(info => {
+          const build = info && info.build ? String(info.build) : '';
+          if (!build || build === String(window.ONDA_BUILD || '')) return;
+          const url = new URL(location.href);
+          url.searchParams.set('v', build);
+          location.replace(url.toString());
+        })
+        .catch(() => {});
+    }
+    window.addEventListener('focus', checkForAppUpdate);
+    setTimeout(checkForAppUpdate, 2500);
 
     /* contas guardadas na base de dados aparecem no ecrã de entrada */
     loadAccountsFromDb().then(added => {

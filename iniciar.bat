@@ -11,5 +11,5 @@ echo.
 echo   Feche esta janela para parar o servidor.
 echo.
 start "" "http://localhost:8080"
-py -3 -m http.server 8080 || python -m http.server 8080 || npx --yes http-server -p 8080 -c-1
+py -3 servidor.py || python servidor.py || py -3 -m http.server 8080 || python -m http.server 8080 || npx --yes http-server -p 8080 -c-1
 pause
